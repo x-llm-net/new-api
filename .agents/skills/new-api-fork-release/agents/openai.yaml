@@ -1,0 +1,4 @@
+interface:
+  display_name: "new-api Fork Release"
+  short_description: "Release and deploy the new-api fork safely."
+  default_prompt: "Use $new-api-fork-release to publish a tested fork tag and deploy it to rockapi."
