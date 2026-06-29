@@ -17,11 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
-import { useAuthStore } from '@/stores/auth-store'
-import { Markdown } from '@/components/ui/markdown'
+
 import { PublicLayout } from '@/components/layout'
-import { Footer } from '@/components/layout/components/footer'
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
+import { Markdown } from '@/components/ui/markdown'
+import { useAuthStore } from '@/stores/auth-store'
+
+import { Hero, HomeFooter, LlmhubRadar, Pricing, WhyChoose } from './components'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -61,13 +62,20 @@ export function Home() {
   }
 
   return (
-    <PublicLayout showMainContainer={false}>
+    <PublicLayout
+      logo={
+        <span className='flex size-full items-center justify-center rounded-lg bg-red-700 text-xs font-black text-white'>
+          X
+        </span>
+      }
+      showMainContainer={false}
+      siteName='x-llm'
+    >
       <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
-      <Footer />
+      <Pricing />
+      <WhyChoose />
+      <LlmhubRadar />
+      <HomeFooter />
     </PublicLayout>
   )
 }

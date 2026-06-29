@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog } from '@/components/dialog'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { NotificationDialog } from '@/components/notification-dialog'
 import { NotificationPopover } from '@/components/notification-popover'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -334,6 +335,17 @@ export function PublicHeader(props: PublicHeaderProps) {
           </nav>
         </div>
       </header>
+
+      <NotificationDialog
+        open={notifications.dialogOpen}
+        onOpenChange={notifications.setDialogOpen}
+        activeTab={notifications.activeTab}
+        onTabChange={notifications.setActiveTab}
+        notice={notifications.notice}
+        announcements={notifications.announcements}
+        loading={notifications.loading}
+        onCloseToday={notifications.closeToday}
+      />
 
       {/* Mobile full-screen overlay */}
       <div

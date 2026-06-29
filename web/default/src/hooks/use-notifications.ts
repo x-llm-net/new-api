@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNotificationStore } from '@/stores/notification-store'
 import { getNotice } from '@/lib/api'
@@ -42,10 +42,6 @@ function hashString(input: string): string {
 function getAnnouncementKey(item: Record<string, unknown>): string {
   if (!item) return ''
 
-  if (item.id !== undefined && item.id !== null) {
-    return `id:${item.id}`
-  }
-
   const fingerprint = JSON.stringify({
     publishDate: (item?.publishDate as string) || '',
     content: ((item?.content as string) || '').trim(),
@@ -54,7 +50,13 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
     title: ((item?.title as string) || '').trim(),
     link: ((item?.link as string) || '').trim(),
   })
-  return `hash:${hashString(fingerprint)}`
+  const hash = hashString(fingerprint)
+
+  if (item.id !== undefined && item.id !== null) {
+    return `id:${item.id}:${hash}`
+  }
+
+  return `hash:${hash}`
 }
 
 /**
@@ -63,9 +65,11 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
  */
 export function useNotifications() {
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'notice' | 'announcements'>(
     'notice'
   )
+  const [autoDialogOpened, setAutoDialogOpened] = useState(false)
 
   // Fetch Notice from API
   const {
@@ -81,10 +85,13 @@ export function useNotifications() {
   // Fetch Announcements from status
   const { status, loading: statusLoading } = useStatus()
   const announcementsEnabled = status?.announcements_enabled ?? false
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const announcements: Record<string, unknown>[] = announcementsEnabled
-    ? ((status?.announcements || []) as Record<string, unknown>[]).slice(0, 20)
-    : []
+  const announcements: Record<string, unknown>[] = useMemo(() => {
+    if (!announcementsEnabled) return []
+    return ((status?.announcements || []) as Record<string, unknown>[]).slice(
+      0,
+      20
+    )
+  }, [announcementsEnabled, status?.announcements])
 
   // Notification store
   const {
@@ -92,6 +99,8 @@ export function useNotifications() {
     markNoticeRead,
     markAnnouncementsRead,
     isAnnouncementRead,
+    setClosedUntilDate,
+    isNoticeClosed,
   } = useNotificationStore()
 
   // Extract notice content
@@ -99,45 +108,85 @@ export function useNotifications() {
     ? (noticeResponse.data || '').trim()
     : ''
 
+  const unreadAnnouncementKeys = useMemo(
+    () =>
+      announcements
+        .map((item: Record<string, unknown>) => {
+          const key = getAnnouncementKey(item)
+          return isAnnouncementRead(key) ? '' : key
+        })
+        .filter(Boolean),
+    [announcements, isAnnouncementRead]
+  )
+
+  const hasUnreadAnnouncements = unreadAnnouncementKeys.length > 0
+  const hasUnreadNotice = !!(noticeContent && noticeContent !== lastReadNotice)
+
   // Calculate unread counts
   const unreadCounts = useMemo(() => {
     const noticeUnread =
       noticeContent && noticeContent !== lastReadNotice ? 1 : 0
 
-    const announcementsUnread = announcements.filter(
-      (item: Record<string, unknown>) => {
-        const key = getAnnouncementKey(item)
-        return !isAnnouncementRead(key)
-      }
-    ).length
-
     return {
       notice: noticeUnread,
-      announcements: announcementsUnread,
-      total: noticeUnread + announcementsUnread,
+      announcements: unreadAnnouncementKeys.length,
+      total: noticeUnread + unreadAnnouncementKeys.length,
     }
-  }, [noticeContent, lastReadNotice, announcements, isAnnouncementRead])
+  }, [noticeContent, lastReadNotice, unreadAnnouncementKeys])
 
-  const markAnnouncementsAsRead = () => {
-    if (announcements.length > 0) {
-      const allKeys = announcements.map((item: Record<string, unknown>) =>
-        getAnnouncementKey(item)
-      )
-      markAnnouncementsRead(allKeys)
+  const markAnnouncementsAsRead = useCallback(() => {
+    if (unreadAnnouncementKeys.length > 0) {
+      markAnnouncementsRead(unreadAnnouncementKeys)
     }
-  }
+  }, [markAnnouncementsRead, unreadAnnouncementKeys])
+
+  const markTabAsRead = useCallback(
+    (tab: 'notice' | 'announcements') => {
+      if (tab === 'notice' && noticeContent) {
+        markNoticeRead(noticeContent)
+      }
+      if (tab === 'announcements') {
+        markAnnouncementsAsRead()
+      }
+    },
+    [markAnnouncementsAsRead, markNoticeRead, noticeContent]
+  )
+
+  const handleCloseToday = useCallback(() => {
+    setClosedUntilDate(new Date().toDateString())
+    setDialogOpen(false)
+    markTabAsRead(activeTab)
+  }, [activeTab, markTabAsRead, setClosedUntilDate])
+
+  useEffect(() => {
+    if (autoDialogOpened || dialogOpen || noticeLoading || statusLoading) return
+    if (isNoticeClosed()) return
+    if (!hasUnreadNotice && !hasUnreadAnnouncements) return
+
+    const nextTab =
+      hasUnreadNotice || !hasUnreadAnnouncements ? 'notice' : 'announcements'
+
+    // Auto-open is intentionally state-driven after async notice/status loads.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveTab(nextTab)
+    setAutoDialogOpened(true)
+    setDialogOpen(true)
+  }, [
+    autoDialogOpened,
+    dialogOpen,
+    hasUnreadAnnouncements,
+    hasUnreadNotice,
+    isNoticeClosed,
+    markTabAsRead,
+    noticeLoading,
+    statusLoading,
+  ])
 
   // Handle popover open
   const handleOpenPopover = (tab?: 'notice' | 'announcements') => {
     const nextTab = tab || activeTab
 
-    // Mark currently visible content as read when opening the notification center
-    if (noticeContent) {
-      markNoticeRead(noticeContent)
-    }
-    if (nextTab === 'announcements') {
-      markAnnouncementsAsRead()
-    }
+    markTabAsRead(nextTab)
 
     setActiveTab(nextTab)
     setPopoverOpen(true)
@@ -150,6 +199,13 @@ export function useNotifications() {
     }
 
     setPopoverOpen(false)
+  }
+
+  const handleDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      markTabAsRead(activeTab)
+    }
+    setDialogOpen(open)
   }
 
   // Handle tab change - mark announcements as read when switching to that tab
@@ -175,12 +231,15 @@ export function useNotifications() {
     // Popover state
     popoverOpen,
     setPopoverOpen: handlePopoverOpenChange,
+    dialogOpen,
+    setDialogOpen: handleDialogOpenChange,
     activeTab,
     setActiveTab: handleTabChange,
 
     // Actions
     openPopover: handleOpenPopover,
     closePopover: () => setPopoverOpen(false),
+    closeToday: handleCloseToday,
     refetchNotice,
   }
 }

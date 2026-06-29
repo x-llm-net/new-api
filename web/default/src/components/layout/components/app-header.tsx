@@ -20,6 +20,7 @@ import { useNotifications } from '@/hooks/use-notifications'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { NotificationDialog } from '@/components/notification-dialog'
 import { NotificationPopover } from '@/components/notification-popover'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
@@ -144,6 +145,16 @@ export function AppHeader({
           </div>
         )}
       </Header>
+      <NotificationDialog
+        open={notifications.dialogOpen}
+        onOpenChange={notifications.setDialogOpen}
+        activeTab={notifications.activeTab}
+        onTabChange={notifications.setActiveTab}
+        notice={notifications.notice}
+        announcements={notifications.announcements}
+        loading={notifications.loading}
+        onCloseToday={notifications.closeToday}
+      />
     </>
   )
 }

@@ -16,8 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Settings, Zap, BarChart3 } from 'lucide-react'
+import { Activity, KeyRound, PlugZap, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+
 import { AnimateInView } from '@/components/animate-in-view'
 
 export function HowItWorks() {
@@ -26,58 +27,68 @@ export function HowItWorks() {
   const steps = [
     {
       num: '1',
-      title: t('Configure'),
+      title: t('Create your access key'),
       desc: t(
-        'Add your API keys, set up channels and configure access permissions'
+        'Start with one API key for your app, tool, or teammate. Keep raw upstream keys centralized.'
       ),
-      icon: <Settings className='size-6' strokeWidth={1.5} />,
+      icon: <KeyRound className='size-5' strokeWidth={1.5} />,
     },
     {
       num: '2',
-      title: t('Connect'),
+      title: t('Choose the model families'),
       desc: t(
-        'Connect through OpenAI, Claude, Gemini, and other compatible API routes'
+        'Use OpenAI-compatible routes, Claude routes, Gemini routes, or your preferred NewAPI-compatible setup.'
       ),
-      icon: <Zap className='size-6' strokeWidth={1.5} />,
+      icon: <SlidersHorizontal className='size-5' strokeWidth={1.5} />,
     },
     {
       num: '3',
-      title: t('Monitor'),
-      desc: t('Track usage, costs and performance with real-time analytics'),
-      icon: <BarChart3 className='size-6' strokeWidth={1.5} />,
+      title: t('Connect your AI stack'),
+      desc: t(
+        'Point Codex, Claude Code, Cursor, Cherry Studio, n8n, or internal tools at the same gateway.'
+      ),
+      icon: <PlugZap className='size-5' strokeWidth={1.5} />,
+    },
+    {
+      num: '4',
+      title: t('Watch reliability and usage'),
+      desc: t(
+        'Track balance, costs, model usage, and service status before a workflow quietly breaks.'
+      ),
+      icon: <Activity className='size-5' strokeWidth={1.5} />,
     },
   ]
 
   return (
-    <section className='border-border/40 relative z-10 border-t px-6 py-24 md:py-32'>
+    <section className='border-border/60 bg-muted/10 relative z-10 border-y px-6 py-20 md:py-28'>
       <div className='mx-auto max-w-6xl'>
-        <AnimateInView className='mb-16 text-center md:mb-20'>
+        <AnimateInView className='mb-12 max-w-2xl'>
           <p className='text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase'>
-            {t('How It Works')}
+            {t('How teams use it')}
           </p>
           <h2 className='text-2xl font-bold tracking-tight md:text-3xl'>
-            {t('Three steps to get started')}
+            {t('From first key to team-wide AI workflows')}
           </h2>
         </AnimateInView>
 
-        <div className='grid gap-8 md:grid-cols-3 md:gap-12'>
-          {steps.map((step, i) => (
+        <div className='grid gap-4 md:grid-cols-4'>
+          {steps.map((step, index) => (
             <AnimateInView
               key={step.num}
-              delay={i * 150}
+              delay={index * 120}
               animation='fade-up'
-              className='relative flex flex-col items-center text-center'
+              className='border-border/70 bg-background relative rounded-lg border p-5'
             >
-              <div className='relative mb-6'>
-                <div className='text-muted-foreground border-border/50 bg-muted/30 flex size-16 items-center justify-center rounded-2xl border transition-colors'>
+              <div className='mb-5 flex items-center justify-between'>
+                <div className='text-muted-foreground border-border/60 bg-muted/20 flex size-10 items-center justify-center rounded-lg border'>
                   {step.icon}
                 </div>
-                <div className='bg-foreground text-background absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full text-xs font-bold'>
-                  {step.num}
-                </div>
+                <span className='text-muted-foreground font-mono text-xs'>
+                  0{step.num}
+                </span>
               </div>
-              <h3 className='mb-2 text-base font-semibold'>{step.title}</h3>
-              <p className='text-muted-foreground max-w-[240px] text-sm leading-relaxed'>
+              <h3 className='mb-2 text-sm font-semibold'>{step.title}</h3>
+              <p className='text-muted-foreground text-xs leading-relaxed'>
                 {step.desc}
               </p>
             </AnimateInView>
