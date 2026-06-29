@@ -22,3 +22,4 @@ This fork keeps a small set of product customizations on top of upstream new-api
 - X-LLM Docker image publishing uses the GHCR workflow and does not publish to the upstream Docker Hub image.
 - X-LLM release tags use the `xllm-*` prefix; upstream Docker Hub and GitHub Release workflows must exclude that prefix.
 - Run at least `bun run typecheck` and `bun run build` in `web/default` after frontend changes.
+- Local Codex has a reusable release skill at `~/.codex/skills/xllm-new-api-release`; use it for future production releases so backup, image pull, deploy, and rollback steps stay consistent.
