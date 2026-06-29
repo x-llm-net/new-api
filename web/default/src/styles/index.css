@@ -447,6 +447,25 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
+@keyframes xllm-hero-wave-cell {
+  0% {
+    background-color: transparent;
+    opacity: 0;
+  }
+  22% {
+    background-color: color-mix(
+      in srgb,
+      var(--cell-color) calc(var(--cell-opacity) * 100%),
+      transparent
+    );
+    opacity: 1;
+  }
+  100% {
+    background-color: transparent;
+    opacity: 0;
+  }
+}
+
 .landing-animate-fade-up {
   animation: landing-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -463,6 +482,39 @@ For commercial licensing, please contact support@quantumnous.com
   animation: landing-fade-right 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.xllm-hero-grid-cell {
+  border-right: 1px solid rgb(15 23 42 / 0.08);
+  border-bottom: 1px solid rgb(15 23 42 / 0.08);
+  background: rgb(255 255 255 / 0.02);
+}
+
+.xllm-hero-hover-cell {
+  grid-column: calc(var(--hero-grid-col) + 1);
+  grid-row: calc(var(--hero-grid-row) + 1);
+  background-color: rgb(185 28 28 / 0.035);
+  box-shadow: inset 0 0 0 1px rgb(185 28 28 / 0.09);
+  opacity: var(--hero-hover-opacity);
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.xllm-hero-wave-cell {
+  animation: xllm-hero-wave-cell 1.02s ease-out var(--cell-delay) both;
+  will-change: background-color, opacity;
+}
+
+.xllm-hero-wave-cell-muted {
+  animation: none;
+}
+
+.dark .xllm-hero-grid-cell {
+  border-right-color: rgb(255 255 255 / 0.08);
+  border-bottom-color: rgb(255 255 255 / 0.08);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .landing-animate-fade-up,
   .landing-animate-fade-in,
@@ -472,6 +524,10 @@ For commercial licensing, please contact support@quantumnous.com
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+  }
+
+  .xllm-hero-wave-cell {
+    display: none;
   }
 }
 
