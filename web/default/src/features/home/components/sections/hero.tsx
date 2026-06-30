@@ -158,6 +158,9 @@ const ROUTE_BADGES = [
 const GRID_CELL_SIZE = 48
 const GRID_COLUMNS = 60
 const GRID_ROWS = 15
+const GRID_HEIGHT = GRID_ROWS * GRID_CELL_SIZE
+const GRID_WIDTH = GRID_COLUMNS * GRID_CELL_SIZE
+const GRID_BOTTOM_FADE_HEIGHT = 220
 const GRID_CELLS = Array.from(
   { length: GRID_COLUMNS * GRID_ROWS },
   (_, index) => {
@@ -430,8 +433,8 @@ export function Hero(props: HeroProps) {
         style={{
           gridTemplateColumns: `repeat(${GRID_COLUMNS}, ${GRID_CELL_SIZE}px)`,
           gridTemplateRows: `repeat(${GRID_ROWS}, ${GRID_CELL_SIZE}px)`,
-          width: GRID_COLUMNS * GRID_CELL_SIZE,
-          height: GRID_ROWS * GRID_CELL_SIZE,
+          width: GRID_WIDTH,
+          height: GRID_HEIGHT,
         }}
       >
         {GRID_CELLS.map((cell) => (
@@ -454,8 +457,8 @@ export function Hero(props: HeroProps) {
         style={{
           gridTemplateColumns: `repeat(${GRID_COLUMNS}, ${GRID_CELL_SIZE}px)`,
           gridTemplateRows: `repeat(${GRID_ROWS}, ${GRID_CELL_SIZE}px)`,
-          width: GRID_COLUMNS * GRID_CELL_SIZE,
-          height: GRID_ROWS * GRID_CELL_SIZE,
+          width: GRID_WIDTH,
+          height: GRID_HEIGHT,
         }}
       >
         {waveCells.map((cell) => (
@@ -476,7 +479,12 @@ export function Hero(props: HeroProps) {
       </div>
       <div
         aria-hidden
-        className='from-background via-background/55 absolute inset-x-0 bottom-0 -z-10 h-48 bg-gradient-to-t to-transparent'
+        className='from-background via-background/70 pointer-events-none absolute left-1/2 -z-10 -translate-x-1/2 bg-gradient-to-t to-transparent'
+        style={{
+          top: Math.max(0, GRID_HEIGHT - GRID_BOTTOM_FADE_HEIGHT),
+          width: GRID_WIDTH,
+          height: GRID_BOTTOM_FADE_HEIGHT,
+        }}
       />
 
       <div className='mx-auto max-w-7xl'>
