@@ -157,7 +157,7 @@ const ROUTE_BADGES = [
 ]
 const GRID_CELL_SIZE = 48
 const GRID_COLUMNS = 60
-const GRID_ROWS = 30
+const GRID_ROWS = 15
 const GRID_CELLS = Array.from(
   { length: GRID_COLUMNS * GRID_ROWS },
   (_, index) => {
@@ -530,13 +530,6 @@ export function Hero(props: HeroProps) {
                 <ArrowRight className='ml-1.5 size-4 transition-transform duration-200 group-hover:translate-x-0.5' />
               </Button>
             )}
-            <Button
-              variant='outline'
-              className='border-border/70 bg-background/85 hover:bg-background h-12 rounded-lg px-6 text-sm font-semibold shadow-sm backdrop-blur'
-              render={<Link to='/pricing' />}
-            >
-              {t('View Pricing')}
-            </Button>
             {renderDocsButton()}
           </div>
         </div>

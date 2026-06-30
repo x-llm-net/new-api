@@ -64,9 +64,11 @@ export function Home() {
   return (
     <PublicLayout
       logo={
-        <span className='flex size-full items-center justify-center rounded-lg bg-red-700 text-xs font-black text-white'>
-          X
-        </span>
+        <img
+          src='/logo.png'
+          alt=''
+          className='size-full rounded-lg object-contain'
+        />
       }
       showMainContainer={false}
       siteName='x-llm'

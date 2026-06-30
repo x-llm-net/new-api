@@ -57,7 +57,7 @@ function getFooterColumns(statusUrl: string): FooterColumn[] {
         { label: 'Setup docs', href: DOCS_URL },
         { label: 'Model pricing', href: '/pricing' },
         { label: 'Status transparency', href: statusUrl },
-        { label: 'API endpoint: https://x-llm.net/v1', href: DOCS_URL },
+        { label: 'API endpoint: https://x-llm.net', href: DOCS_URL },
       ],
     },
   ]
@@ -122,9 +122,11 @@ export function HomeFooter() {
         <div className='grid gap-10 lg:grid-cols-[1.15fr_1fr_1fr]'>
           <div className='max-w-md'>
             <Link to='/' className='inline-flex items-center gap-3'>
-              <div className='flex size-10 items-center justify-center rounded-xl bg-red-700 text-sm font-black text-white shadow-sm'>
-                X
-              </div>
+              <img
+                src='/logo.png'
+                alt=''
+                className='size-10 shrink-0 rounded-xl object-contain shadow-sm'
+              />
               <div>
                 <div className='text-foreground text-lg font-black tracking-tight'>
                   x-llm
