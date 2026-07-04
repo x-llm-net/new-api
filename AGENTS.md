@@ -54,6 +54,15 @@ web/             — Frontend themes container
 
 ## Rules
 
+### X-LLM Customizations
+
+This repository is an X-LLM fork with product-specific customizations on top of upstream new-api. Before upstream syncs, release work, or large refactors, read:
+
+- `docs/xllm-upgrade-checklist.md`
+- `docs/xllm-home-ttft-monitor.md`
+
+Do not remove X-LLM-owned homepage monitor code, `xllm_` probe tables, X-LLM monitor services, or homepage sections during upstream upgrades. Keep X-LLM-specific monitor logic behind `xllm`-named modules and small wrapper functions so upstream merges remain localized.
+
 ### Common Code Quality
 
 - New code should stay direct and readable. Prefer early returns, clear branches, and well-named local variables to deep nesting or layered control flow.

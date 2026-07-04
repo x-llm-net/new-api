@@ -38,14 +38,14 @@ interface FeaturesProps {
 
 const MODEL_FAMILIES = ['OpenAI', 'Claude', 'Gemini', 'DeepSeek', 'Qwen', 'xAI']
 const STATUS_BLOCKS = [
-  'bg-emerald-500',
-  'bg-emerald-500',
-  'bg-lime-400',
-  'bg-emerald-500',
-  'bg-emerald-500',
-  'bg-amber-300',
-  'bg-emerald-500',
-  'bg-emerald-500',
+  { id: 'first', className: 'bg-emerald-500' },
+  { id: 'second', className: 'bg-emerald-500' },
+  { id: 'third', className: 'bg-lime-400' },
+  { id: 'fourth', className: 'bg-emerald-500' },
+  { id: 'fifth', className: 'bg-emerald-500' },
+  { id: 'sixth', className: 'bg-amber-300' },
+  { id: 'seventh', className: 'bg-emerald-500' },
+  { id: 'eighth', className: 'bg-emerald-500' },
 ] as const
 
 export function Features(_props: FeaturesProps) {
@@ -126,11 +126,11 @@ export function Features(_props: FeaturesProps) {
       ),
     },
     {
-      id: 'radar',
+      id: 'status',
       num: '04',
       title: t('Transparent service status'),
       desc: t(
-        'Connect LLMHub Radar to show real probe results, first-token latency, and incident updates.'
+        'Show scheduled model probes, latency, and available route counts without relying on an external status iframe.'
       ),
       span: 'md:col-span-2',
       icon: <Activity className='size-4 text-violet-500' />,
@@ -143,8 +143,11 @@ export function Features(_props: FeaturesProps) {
             </span>
           </div>
           <div className='grid grid-cols-8 gap-1'>
-            {STATUS_BLOCKS.map((item, index) => (
-              <span key={index} className={cn('h-7 rounded-[3px]', item)} />
+            {STATUS_BLOCKS.map((item) => (
+              <span
+                key={item.id}
+                className={cn('h-7 rounded-[3px]', item.className)}
+              />
             ))}
           </div>
         </div>

@@ -37,6 +37,7 @@ import (
 
 type testResult struct {
 	context     *gin.Context
+	info        *relaycommon.RelayInfo
 	localErr    error
 	newAPIError *types.NewAPIError
 }
@@ -72,7 +73,13 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 	return rootUser.Id, nil
 }
 
-func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) (result testResult) {
+	var relayInfo *relaycommon.RelayInfo
+	defer func() {
+		if result.info == nil {
+			result.info = relayInfo
+		}
+	}()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -235,6 +242,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	request := buildTestRequest(testModel, endpointType, channel, isStream)
 
 	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
+	relayInfo = info
 
 	if err != nil {
 		return testResult{
@@ -474,8 +482,8 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			newAPIError: types.NewOpenAIError(usageErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError),
 		}
 	}
-	result := w.Result()
-	respBody, err := readTestResponseBody(result.Body, isStream)
+	httpResult := w.Result()
+	respBody, err := readTestResponseBody(httpResult.Body, isStream)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -904,7 +912,7 @@ type channelTestSummary struct {
 // cancellation so a system-task runner that loses its lease stops promptly. When
 // report is non-nil it is called after each channel with (processed, total) so
 // the system task can surface progress.
-func performChannelTests(ctx context.Context, channels []*model.Channel, testUserID int, allowDisable bool, report func(processed, total int)) channelTestSummary {
+func performChannelTests(ctx context.Context, taskID string, channels []*model.Channel, testUserID int, allowDisable bool, report func(processed, total int)) channelTestSummary {
 	summary := channelTestSummary{}
 	var disableThreshold = int64(common.ChannelDisableThreshold * 1000)
 	if disableThreshold == 0 {
@@ -924,7 +932,8 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		}
 		isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 		tik := time.Now()
-		result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+		isStreamTest := shouldUseStreamForAutomaticChannelTest(channel)
+		result := testChannel(ctx, channel, testUserID, "", "", isStreamTest)
 		tok := time.Now()
 		milliseconds := tok.Sub(tik).Milliseconds()
 		if ctx != nil && ctx.Err() != nil {
@@ -994,7 +1003,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 // trigger passes ChannelTestModeScheduledAll to test every channel. When notify
 // is set the root user is notified on completion. Cross-instance execution is
 // guarded by the system task per-type lock, so no process-local guard is needed.
-func runChannelTestTask(ctx context.Context, mode string, notify bool, report func(processed, total int)) (channelTestSummary, error) {
+func runChannelTestTask(ctx context.Context, taskID string, mode string, notify bool, report func(processed, total int)) (channelTestSummary, error) {
 	testUserID, err := resolveChannelTestUserID(nil)
 	if err != nil {
 		return channelTestSummary{}, err
@@ -1008,7 +1017,7 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	}
 	selected := selectChannelsForAutomaticTest(channels, mode)
 	allowDisable := mode != operation_setting.ChannelTestModePassiveRecovery
-	summary := performChannelTests(ctx, selected, testUserID, allowDisable, report)
+	summary := performChannelTests(ctx, taskID, selected, testUserID, allowDisable, report)
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 	}

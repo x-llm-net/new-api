@@ -39,7 +39,7 @@ const REASONS = [
     icon: Gauge,
     title: 'Stable service, worry-free usage.',
     description:
-      'LLMHub Radar shows availability, first-token latency, and incident updates, so you can switch routes based on real service signals.',
+      'The homepage status panel is driven by scheduled channel probes, so you can see model availability and latency before choosing a route.',
   },
 ] as const
 

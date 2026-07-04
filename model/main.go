@@ -267,6 +267,9 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if err := resetLegacyXLLMProbeTables(); err != nil {
+		return err
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
@@ -297,6 +300,8 @@ func migrateDB() error {
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
+		&XLLMProbeSample{},
+		&XLLMProbeRollup{},
 	)
 	if err != nil {
 		return err
@@ -314,6 +319,9 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
+	if err := resetLegacyXLLMProbeTables(); err != nil {
+		return err
+	}
 
 	var wg sync.WaitGroup
 
@@ -349,6 +357,8 @@ func migrateDBFast() error {
 		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
+		{&XLLMProbeSample{}, "XLLMProbeSample"},
+		{&XLLMProbeRollup{}, "XLLMProbeRollup"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -383,6 +393,22 @@ func migrateDBFast() error {
 		}
 	}
 	common.SysLog("database migrated")
+	return nil
+}
+
+func resetLegacyXLLMProbeTables() error {
+	for _, tableName := range []string{"xllm_probe_samples", "xllm_probe_rollups"} {
+		if !DB.Migrator().HasTable(tableName) {
+			continue
+		}
+		if DB.Migrator().HasColumn(tableName, "selected_channel_id") && !DB.Migrator().HasColumn(tableName, "channel_id") {
+			continue
+		}
+		common.SysLog("dropping experimental X-LLM probe table before v3 migration: " + tableName)
+		if err := DB.Migrator().DropTable(tableName); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

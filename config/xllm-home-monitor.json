@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "interval_minutes": 5,
+  "entries": [
+    {
+      "group": "codex-pro",
+      "model": "gpt-5.4-mini",
+      "display_name": "Codex Pro",
+      "enabled": true,
+      "sort_order": 10
+    },
+    {
+      "group": "claude-full",
+      "model": "claude-haiku-4-5-20251001",
+      "display_name": "Claude Full",
+      "enabled": true,
+      "sort_order": 20
+    }
+  ]
+}

@@ -7,6 +7,7 @@ This fork keeps a small set of product customizations on top of upstream new-api
 - Default frontend theme stays `default`.
 - Default documentation link points to the X-LLM Feishu documentation.
 - The X-LLM homepage sections are still present on the default home page.
+- The X-LLM homepage TTFT monitor design in `docs/xllm-home-ttft-monitor.md` is preserved. Do not remove `xllm_` probe tables, X-LLM monitor services, or homepage monitor feature code during upstream sync.
 
 ## System Announcements
 

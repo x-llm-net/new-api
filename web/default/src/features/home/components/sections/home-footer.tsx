@@ -66,13 +66,14 @@ function getFooterColumns(statusUrl: string): FooterColumn[] {
 function FooterLinkItem(props: FooterLink) {
   const { t } = useTranslation()
   const isExternal = props.href.startsWith('http')
+  const isAnchor = props.href.startsWith('#')
 
-  if (isExternal) {
+  if (isExternal || isAnchor) {
     return (
       <a
         href={props.href}
-        target='_blank'
-        rel='noopener noreferrer'
+        target={isExternal ? '_blank' : undefined}
+        rel={isExternal ? 'noopener noreferrer' : undefined}
         className='text-muted-foreground hover:text-foreground text-sm transition-colors'
       >
         {t(props.label)}
@@ -110,14 +111,13 @@ function ContactRow(props: { icon: LucideIcon; label: string; value: string }) {
 }
 
 export function HomeFooter() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const currentYear = new Date().getFullYear()
-  const locale = i18n.language?.startsWith('zh') ? 'zh' : 'en'
-  const statusUrl = `https://llm-hub.store/x-llm/${locale}`
+  const statusUrl = '#service-status'
   const footerColumns = getFooterColumns(statusUrl)
 
   return (
-    <footer className='dark:bg-background border-border/70 relative z-10 border-t bg-white px-6'>
+    <footer className='dark:bg-muted/10 border-border/70 relative z-10 border-t bg-[#f7f7f7] px-6'>
       <div className='mx-auto max-w-7xl py-12 md:py-14'>
         <div className='grid gap-10 lg:grid-cols-[1.15fr_1fr_1fr]'>
           <div className='max-w-md'>
@@ -145,7 +145,7 @@ export function HomeFooter() {
               {[
                 { icon: KeyRound, label: 'One key' },
                 { icon: Wallet, label: 'Pay as you go' },
-                { icon: Activity, label: 'Observed by LLMHub Radar' },
+                { icon: Activity, label: 'Probe-based status' },
               ].map((item) => {
                 const Icon = item.icon
 
