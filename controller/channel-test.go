@@ -904,7 +904,7 @@ type channelTestSummary struct {
 // cancellation so a system-task runner that loses its lease stops promptly. When
 // report is non-nil it is called after each channel with (processed, total) so
 // the system task can surface progress.
-func performChannelTests(ctx context.Context, channels []*model.Channel, testUserID int, allowDisable bool, report func(processed, total int)) channelTestSummary {
+func performChannelTests(ctx context.Context, taskID string, channels []*model.Channel, testUserID int, allowDisable bool, recordGroupStability bool, report func(processed, total int)) channelTestSummary {
 	summary := channelTestSummary{}
 	var disableThreshold = int64(common.ChannelDisableThreshold * 1000)
 	if disableThreshold == 0 {
@@ -922,6 +922,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		if channel.Status == common.ChannelStatusManuallyDisabled {
 			continue
 		}
+		statusBefore := channel.Status
 		isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 		tik := time.Now()
 		result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
@@ -967,6 +968,28 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 			summary.Enabled++
 		}
 
+		if recordGroupStability {
+			statusAfter := statusBefore
+			if refreshed, err := model.GetChannelById(channel.Id, true); err == nil && refreshed != nil {
+				statusAfter = refreshed.Status
+			}
+			recordInput := service.XLLMGroupStabilityRecordInput{
+				TaskID:              taskID,
+				Channel:             channel,
+				Success:             newAPIError == nil,
+				ResponseTimeMs:      milliseconds,
+				ChannelStatusBefore: statusBefore,
+				ChannelStatusAfter:  statusAfter,
+				TestedAt:            tok.Unix(),
+			}
+			if newAPIError != nil {
+				recordInput.ErrorCode = string(newAPIError.GetErrorCode())
+			}
+			if err := service.RecordXLLMGroupStabilitySample(recordInput); err != nil {
+				common.SysError(fmt.Sprintf("failed to record xllm group stability sample: channel_id=%d task_id=%s error=%v", channel.Id, taskID, err))
+			}
+		}
+
 		channel.UpdateResponseTime(milliseconds)
 		if common.RequestInterval > 0 {
 			if ctx == nil {
@@ -994,7 +1017,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 // trigger passes ChannelTestModeScheduledAll to test every channel. When notify
 // is set the root user is notified on completion. Cross-instance execution is
 // guarded by the system task per-type lock, so no process-local guard is needed.
-func runChannelTestTask(ctx context.Context, mode string, notify bool, report func(processed, total int)) (channelTestSummary, error) {
+func runChannelTestTask(ctx context.Context, taskID string, mode string, notify bool, report func(processed, total int)) (channelTestSummary, error) {
 	testUserID, err := resolveChannelTestUserID(nil)
 	if err != nil {
 		return channelTestSummary{}, err
@@ -1008,7 +1031,11 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	}
 	selected := selectChannelsForAutomaticTest(channels, mode)
 	allowDisable := mode != operation_setting.ChannelTestModePassiveRecovery
-	summary := performChannelTests(ctx, selected, testUserID, allowDisable, report)
+	recordGroupStability := mode == operation_setting.ChannelTestModeScheduledAll
+	summary := performChannelTests(ctx, taskID, selected, testUserID, allowDisable, recordGroupStability, report)
+	if err := service.CleanupXLLMGroupStabilitySamples(); err != nil {
+		common.SysError("failed to cleanup xllm group stability samples: " + err.Error())
+	}
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 	}

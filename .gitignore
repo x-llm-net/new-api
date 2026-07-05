@@ -2,6 +2,7 @@
 .vscode
 .zed
 .history
+.local-test/
 upload
 *.exe
 *.db
@@ -36,3 +37,4 @@ data/
 token_estimator_test.go
 skills-lock.json
 .playwright-mcp
+__pycache__/

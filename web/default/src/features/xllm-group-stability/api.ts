@@ -16,12 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export { CTA } from './sections/cta'
-export { Features } from './sections/features'
-export { GroupStability } from './sections/group-stability'
-export { Hero } from './sections/hero'
-export { HomeFooter } from './sections/home-footer'
-export { HowItWorks } from './sections/how-it-works'
-export { Pricing } from './sections/pricing'
-export { Stats } from './sections/stats'
-export { WhyChoose } from './sections/why-choose'
+import { api } from '@/lib/api'
+import type { XLLMGroupStabilitySummary } from './types'
+
+export async function getXLLMGroupStabilitySummary() {
+  const res = await api.get<{
+    data: XLLMGroupStabilitySummary
+    message?: string
+    success: boolean
+  }>('/api/xllm/group-stability/summary')
+  return res.data
+}

@@ -513,7 +513,7 @@ export function Hero(props: HeroProps) {
             style={{ animationDelay: '120ms' }}
           >
             {t(
-              'One key connects top global LLMs, with pricing as low as 0.3x official rates.'
+              'One platform connects top global LLMs, with pricing as low as 0.3x official rates.'
             )}
           </p>
 

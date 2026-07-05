@@ -19,9 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import {
   Activity,
-  KeyRound,
   Mail,
   MessageCircle,
+  Network,
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
@@ -67,12 +67,12 @@ function FooterLinkItem(props: FooterLink) {
   const { t } = useTranslation()
   const isExternal = props.href.startsWith('http')
 
-  if (isExternal) {
+  if (isExternal || props.href.startsWith('#') || props.href.startsWith('/#')) {
     return (
       <a
         href={props.href}
-        target='_blank'
-        rel='noopener noreferrer'
+        target={isExternal ? '_blank' : undefined}
+        rel={isExternal ? 'noopener noreferrer' : undefined}
         className='text-muted-foreground hover:text-foreground text-sm transition-colors'
       >
         {t(props.label)}
@@ -110,10 +110,9 @@ function ContactRow(props: { icon: LucideIcon; label: string; value: string }) {
 }
 
 export function HomeFooter() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const currentYear = new Date().getFullYear()
-  const locale = i18n.language?.startsWith('zh') ? 'zh' : 'en'
-  const statusUrl = `https://llm-hub.store/x-llm/${locale}`
+  const statusUrl = '/#service-status'
   const footerColumns = getFooterColumns(statusUrl)
 
   return (
@@ -138,14 +137,14 @@ export function HomeFooter() {
             </Link>
             <p className='text-muted-foreground mt-5 text-sm leading-7'>
               {t(
-                'One key connects top global LLMs for Claude Code, Codex, agents, and internal AI tools, with transparent pricing and visible service status.'
+                'One platform connects top global LLMs for Claude Code, Codex, agents, and internal AI tools, with transparent pricing and visible service status.'
               )}
             </p>
             <div className='mt-5 flex flex-wrap gap-2'>
               {[
-                { icon: KeyRound, label: 'One key' },
+                { icon: Network, label: 'One platform' },
                 { icon: Wallet, label: 'Pay as you go' },
-                { icon: Activity, label: 'Observed by LLMHub Radar' },
+                { icon: Activity, label: 'Live route checks' },
               ].map((item) => {
                 const Icon = item.icon
 

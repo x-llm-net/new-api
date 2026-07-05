@@ -130,7 +130,7 @@ export function Features(_props: FeaturesProps) {
       num: '04',
       title: t('Transparent service status'),
       desc: t(
-        'Connect LLMHub Radar to show real probe results, first-token latency, and incident updates.'
+        'Group-level availability is checked on schedule and shown on the home page, so you can judge route stability before long-running work depends on it.'
       ),
       span: 'md:col-span-2',
       icon: <Activity className='size-4 text-violet-500' />,

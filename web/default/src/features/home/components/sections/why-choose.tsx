@@ -17,17 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-import { Gauge, KeyRound, Layers3, Zap } from 'lucide-react'
+import { Gauge, Layers3, Network, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AnimateInView } from '@/components/animate-in-view'
 
 const REASONS = [
   {
-    icon: KeyRound,
-    title: 'One key, access every model.',
+    icon: Network,
+    title: 'One platform, broad model access.',
     description:
-      'No need to register OpenAI, Anthropic, and Google separately. Configure one key and your agents can reach the model families they need.',
+      'Use Claude, Codex, Gemini, and other model capabilities from x-llm, then choose service groups by workload and cost.',
   },
   {
     icon: Layers3,
@@ -39,7 +39,7 @@ const REASONS = [
     icon: Gauge,
     title: 'Stable service, worry-free usage.',
     description:
-      'LLMHub Radar shows availability, first-token latency, and incident updates, so you can switch routes based on real service signals.',
+      'Group-level availability is checked on schedule and shown on the home page, so you can judge route stability before long-running work depends on it.',
   },
 ] as const
 

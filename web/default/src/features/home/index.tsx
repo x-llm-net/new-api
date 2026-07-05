@@ -22,7 +22,7 @@ import { PublicLayout } from '@/components/layout'
 import { Markdown } from '@/components/ui/markdown'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { Hero, HomeFooter, LlmhubRadar, Pricing, WhyChoose } from './components'
+import { GroupStability, Hero, HomeFooter, Pricing, WhyChoose } from './components'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -76,7 +76,7 @@ export function Home() {
       <Hero isAuthenticated={isAuthenticated} />
       <Pricing />
       <WhyChoose />
-      <LlmhubRadar />
+      <GroupStability />
       <HomeFooter />
     </PublicLayout>
   )
