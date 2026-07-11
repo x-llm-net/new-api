@@ -59,14 +59,9 @@ function requireAncestor(ancestor, descendant, description) {
   }
 }
 
-function requireRef(ref, description) {
+function resolveRef(ref) {
   const resolved = git(['rev-parse', '--verify', ref], { allowFailure: true })
-  if (resolved) {
-    pass(`${description}: ${ref} -> ${resolved.slice(0, 12)}`)
-    return true
-  }
-  fail(`${description}: ${ref} does not exist`)
-  return false
+  return resolved || ''
 }
 
 function currentRef() {
@@ -106,11 +101,20 @@ function requireBlob(path, expected, description) {
 function main() {
   const ref = currentRef()
   const tag = process.env.TAG || process.env.GITHUB_REF_NAME || ''
-  const integrationRef = requireRef('xllm/main', 'long-lived X-LLM integration branch')
+  const localIntegrationRef = resolveRef('xllm/main')
+  const remoteIntegrationRef = resolveRef('origin/xllm/main')
+  const integrationRef = localIntegrationRef
     ? 'xllm/main'
-    : requireRef('origin/xllm/main', 'remote long-lived X-LLM integration branch')
+    : remoteIntegrationRef
       ? 'origin/xllm/main'
       : ''
+
+  if (integrationRef) {
+    const resolved = localIntegrationRef || remoteIntegrationRef
+    pass(`long-lived X-LLM integration branch: ${integrationRef} -> ${resolved.slice(0, 12)}`)
+  } else {
+    fail('long-lived X-LLM integration branch does not exist')
+  }
 
   if (tag && !tag.startsWith('xllm-')) {
     fail(`X-LLM release tag must start with xllm-, got ${tag}`)
