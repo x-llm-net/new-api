@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { ShieldCheck } from 'lucide-react'
+import { useEffect, useRef, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AnimateInView } from '@/components/animate-in-view'
@@ -143,16 +144,14 @@ function latestKnownTone(item: XLLMGroupStabilityItem): XLLMStabilityTone {
   return 'unknown'
 }
 
-function BucketTooltipContent(props: {
-  bucket: XLLMGroupStabilityBucket
-}) {
+function BucketTooltipContent(props: { bucket: XLLMGroupStabilityBucket }) {
   const { t } = useTranslation()
   const bucket = props.bucket
   const tone = bucketTone(bucket)
 
   return (
     <div className='min-w-36 space-y-1.5 text-left'>
-      <div className='whitespace-nowrap text-xs font-semibold'>
+      <div className='text-xs font-semibold whitespace-nowrap'>
         {formatHourWindow(bucket.ts)}
       </div>
       <div className='text-[11px] opacity-90'>
@@ -168,38 +167,64 @@ function BucketTooltipContent(props: {
 }
 
 function StabilityBlocks(props: { buckets: XLLMGroupStabilityBucket[] }) {
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const autoScrolledRef = useRef(false)
+  const gridStyle = {
+    '--xllm-stability-cols': props.buckets.length,
+    '--xllm-stability-mobile-cell': '3px',
+  } as CSSProperties
+
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    if (!scroller || autoScrolledRef.current) {
+      return
+    }
+
+    if (!window.matchMedia('(max-width: 639px)').matches) {
+      return
+    }
+
+    requestAnimationFrame(() => {
+      scroller.scrollLeft = scroller.scrollWidth
+      autoScrolledRef.current = true
+    })
+  }, [props.buckets.length])
+
   return (
     <div
-      className='grid w-full gap-px sm:gap-[2px]'
-      style={{
-        gridTemplateColumns: `repeat(${props.buckets.length}, minmax(1px, 1fr))`,
-      }}
+      ref={scrollerRef}
+      className='w-full max-w-full [scrollbar-width:none] overflow-x-auto overflow-y-hidden sm:overflow-visible [&::-webkit-scrollbar]:hidden'
     >
-      {props.buckets.map((bucket, index) => {
-        const trigger = (
-          <button
-            type='button'
-            aria-label={`status block ${index + 1}`}
-            className={cn(
-              'h-5 min-w-0 rounded-[3px] transition-transform duration-150 hover:scale-y-125 hover:ring-2 hover:ring-foreground/20 focus-visible:ring-2 focus-visible:ring-foreground/30 focus-visible:outline-none',
-              BUCKET_COLOR_CLASSES[bucketTone(bucket)]
-            )}
-          />
-        )
+      <div
+        className='grid w-max grid-cols-[repeat(var(--xllm-stability-cols),var(--xllm-stability-mobile-cell))] gap-px sm:w-full sm:grid-cols-[repeat(var(--xllm-stability-cols),minmax(0,1fr))] sm:gap-[2px]'
+        style={gridStyle}
+      >
+        {props.buckets.map((bucket, index) => {
+          const trigger = (
+            <button
+              type='button'
+              aria-label={`status block ${index + 1}`}
+              className={cn(
+                'h-5 min-w-0 rounded-[3px] transition-transform duration-150 hover:scale-y-125 hover:ring-2 hover:ring-foreground/20 focus-visible:ring-2 focus-visible:ring-foreground/30 focus-visible:outline-none',
+                BUCKET_COLOR_CLASSES[bucketTone(bucket)]
+              )}
+            />
+          )
 
-        return (
-          <Tooltip key={`${bucket.ts}-${index}`}>
-            <TooltipTrigger render={trigger} />
-            <TooltipContent
-              side='top'
-              sideOffset={8}
-              className='bg-foreground text-background max-w-48 items-start px-3 py-2'
-            >
-              <BucketTooltipContent bucket={bucket} />
-            </TooltipContent>
-          </Tooltip>
-        )
-      })}
+          return (
+            <Tooltip key={`${bucket.ts}-${index}`}>
+              <TooltipTrigger render={trigger} />
+              <TooltipContent
+                side='top'
+                sideOffset={8}
+                className='bg-foreground text-background max-w-48 items-start px-3 py-2'
+              >
+                <BucketTooltipContent bucket={bucket} />
+              </TooltipContent>
+            </Tooltip>
+          )
+        })}
+      </div>
     </div>
   )
 }
