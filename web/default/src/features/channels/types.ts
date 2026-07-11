@@ -117,6 +117,7 @@ export interface AdvancedCustomRoute {
   incoming_path?: string
   upstream_path?: string
   converter?: AdvancedCustomConverter
+  models?: string[]
   auth?: AdvancedCustomRouteAuth
 }
 
@@ -131,6 +132,8 @@ export type AdvancedCustomConverter =
   | 'anthropic_messages_to_openai_chat_completions'
   | 'openai_chat_completions_to_anthropic_messages'
   | 'openai_chat_completions_to_openai_responses'
+  | 'openai_responses_to_openai_chat_completions'
+  | 'openai_responses_to_gemini_generate_content'
   | 'gemini_generate_content_to_openai_chat_completions'
   | 'openai_chat_completions_to_gemini_generate_content'
 

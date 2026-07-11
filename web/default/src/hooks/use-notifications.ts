@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,10 +18,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useNotificationStore } from '@/stores/notification-store'
-import { getNotice } from '@/lib/api'
+
 import { useStatus } from '@/hooks/use-status'
+import { getNotice } from '@/lib/api'
+import { useNotificationStore } from '@/stores/notification-store'
 
 function hashString(input: string): string {
   let hash = 0
