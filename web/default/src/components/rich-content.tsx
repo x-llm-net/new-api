@@ -30,6 +30,7 @@ interface RichContentProps {
   breaks?: boolean
   className?: string
   htmlVariant?: HtmlContentVariant
+  enableHashNavigation?: boolean
 }
 
 export function RichContent(props: RichContentProps) {
@@ -39,6 +40,7 @@ export function RichContent(props: RichContentProps) {
         content={props.content}
         className={props.className}
         variant={props.htmlVariant}
+        enableHashNavigation={props.enableHashNavigation}
       />
     )
   }

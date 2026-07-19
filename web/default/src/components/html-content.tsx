@@ -27,6 +27,7 @@ interface HtmlContentProps {
   content: string
   className?: string
   variant?: HtmlContentVariant
+  enableHashNavigation?: boolean
 }
 
 const isolatedContentSandbox =
@@ -139,8 +140,38 @@ function syncDarkClass(wrapper: HTMLElement): void {
   wrapper.classList.toggle('dark', isDark)
 }
 
+function getIsolatedHashTarget(
+  shadowRoot: ShadowRoot,
+  hash: string
+): HTMLElement | null {
+  if (!hash.startsWith('#') || hash.length === 1) {
+    return null
+  }
+
+  try {
+    return shadowRoot.getElementById(decodeURIComponent(hash.slice(1)))
+  } catch {
+    return null
+  }
+}
+
+function scrollToIsolatedHash(
+  shadowRoot: ShadowRoot,
+  hash: string,
+  behavior: ScrollBehavior
+): boolean {
+  const target = getIsolatedHashTarget(shadowRoot, hash)
+  if (!target) {
+    return false
+  }
+
+  target.scrollIntoView({ behavior, block: 'start' })
+  return true
+}
+
 function IsolatedHtmlContent(props: {
   className?: string
+  enableHashNavigation?: boolean
   html: string
 }): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -178,8 +209,58 @@ function IsolatedHtmlContent(props: {
       attributeFilter: ['class'],
     })
 
-    return () => observer.disconnect()
-  }, [props.html])
+    if (!props.enableHashNavigation) {
+      return () => observer.disconnect()
+    }
+
+    const handleHashClick = (event: Event) => {
+      if (
+        !(event instanceof MouseEvent) ||
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        !(event.target instanceof Element)
+      ) {
+        return
+      }
+
+      const link = event.target.closest<HTMLAnchorElement>('a[href^="#"]')
+      const hash = link?.getAttribute('href')
+      if (
+        !link ||
+        !hash ||
+        (link.target && link.target !== '_self') ||
+        !scrollToIsolatedHash(shadowRoot, hash, 'smooth')
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      if (window.location.hash !== hash) {
+        window.history.pushState(window.history.state, '', hash)
+      }
+    }
+
+    const handleLocationChange = () => {
+      scrollToIsolatedHash(shadowRoot, window.location.hash, 'auto')
+    }
+
+    shadowRoot.addEventListener('click', handleHashClick)
+    window.addEventListener('hashchange', handleLocationChange)
+    window.addEventListener('popstate', handleLocationChange)
+    const initialScrollFrame = window.requestAnimationFrame(handleLocationChange)
+
+    return () => {
+      observer.disconnect()
+      shadowRoot.removeEventListener('click', handleHashClick)
+      window.removeEventListener('hashchange', handleLocationChange)
+      window.removeEventListener('popstate', handleLocationChange)
+      window.cancelAnimationFrame(initialScrollFrame)
+    }
+  }, [props.enableHashNavigation, props.html])
 
   return (
     <div
@@ -197,7 +278,13 @@ export function HtmlContent(props: HtmlContentProps) {
   )
 
   if (variant === 'isolated') {
-    return <IsolatedHtmlContent className={props.className} html={html} />
+    return (
+      <IsolatedHtmlContent
+        className={props.className}
+        enableHashNavigation={props.enableHashNavigation}
+        html={html}
+      />
+    )
   }
 
   return (

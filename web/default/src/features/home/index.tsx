@@ -107,6 +107,7 @@ export function Home() {
             htmlVariant='isolated'
             content={content}
             className='custom-home-content'
+            enableHashNavigation
           />
         </PublicLayout>
       )
