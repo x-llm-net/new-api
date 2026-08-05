@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -104,6 +105,20 @@ func AdminAuth() func(c *gin.Context) {
 func RootAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		authHelper(c, common.RoleRootUser)
+	}
+}
+
+func InvoiceOperatorAuth() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		if operation_setting.IsInvoiceOperator(c.GetInt("id"), c.GetInt("role")) {
+			c.Next()
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege),
+		})
+		c.Abort()
 	}
 }
 

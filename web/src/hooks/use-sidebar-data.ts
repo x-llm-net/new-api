@@ -27,6 +27,7 @@ import {
   ListTodo,
   MessageSquare,
   Radio,
+  ReceiptText,
   ServerCog,
   Settings,
   Ticket,
@@ -38,6 +39,7 @@ import { useTranslation } from 'react-i18next'
 
 import { type SidebarData } from '@/components/layout/types'
 import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -47,6 +49,27 @@ import { ROLE } from '@/lib/roles'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const user = useAuthStore((state) => state.auth.user)
+  const isInvoiceEnabled = user?.permissions?.invoice_enabled === true
+  const isInvoiceOperator = user?.permissions?.invoice_operator === true
+
+  if (isInvoiceOperator && (user?.role ?? ROLE.GUEST) < ROLE.ADMIN) {
+    return {
+      navGroups: [
+        {
+          id: 'finance',
+          title: t('Invoice finance'),
+          items: [
+            {
+              title: t('Invoice management'),
+              url: '/finance/invoices',
+              icon: ReceiptText,
+            },
+          ],
+        },
+      ],
+    }
+  }
 
   return {
     navGroups: [
@@ -108,6 +131,15 @@ export function useSidebarData(): SidebarData {
             url: '/wallet',
             icon: Wallet,
           },
+          ...(isInvoiceEnabled
+            ? [
+                {
+                  title: t('Invoices'),
+                  url: '/invoices',
+                  icon: ReceiptText,
+                },
+              ]
+            : []),
           {
             title: t('Profile'),
             url: '/profile',
@@ -144,6 +176,15 @@ export function useSidebarData(): SidebarData {
             url: '/subscriptions',
             icon: CreditCard,
           },
+          ...(isInvoiceOperator
+            ? [
+                {
+                  title: t('Invoice management'),
+                  url: '/finance/invoices',
+                  icon: ReceiptText,
+                },
+              ]
+            : []),
           {
             title: t('System Info'),
             url: '/system-info',

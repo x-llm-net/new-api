@@ -497,7 +497,7 @@ func GetSelf(c *gin.Context) {
 	// The authenticated role is loaded from GetUserCache. It should equal the
 	// row role, but use it for capabilities so GetSelf and login/refresh remain
 	// consistent with the authorization decision made for this request.
-	permissions := calculateUserPermissions(userRole)
+	permissions := calculateUserPermissions(id, userRole)
 	permissions["admin_permissions"] = authz.Capabilities(id, userRole)
 	responseData["permissions"] = permissions
 
@@ -514,7 +514,7 @@ func GetSelf(c *gin.Context) {
 // administrator-only remarks.
 func buildSelfUserData(user *model.User) map[string]interface{} {
 	userSetting := user.GetSetting()
-	permissions := calculateUserPermissions(user.Role)
+	permissions := calculateUserPermissions(user.Id, user.Role)
 	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
 	return map[string]interface{}{
 		"id":                user.Id,
@@ -546,8 +546,10 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
 }
 
 // 计算用户权限的辅助函数
-func calculateUserPermissions(userRole int) map[string]interface{} {
+func calculateUserPermissions(userID int, userRole int) map[string]interface{} {
 	permissions := map[string]interface{}{}
+	permissions["invoice_enabled"] = operation_setting.GetInvoiceSetting().Enabled
+	permissions["invoice_operator"] = operation_setting.IsInvoiceOperator(userID, userRole)
 
 	// 根据用户角色计算权限
 	if userRole == common.RoleRootUser {
