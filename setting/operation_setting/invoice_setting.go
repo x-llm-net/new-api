@@ -14,8 +14,9 @@ type InvoiceSetting struct {
 }
 
 var invoiceSetting = InvoiceSetting{
-	Enabled:        false,
-	MinAmountCents: 10000,
+	Enabled:         false,
+	MinAmountCents:  10000,
+	OperatorUserIDs: []int{},
 }
 
 func init() {

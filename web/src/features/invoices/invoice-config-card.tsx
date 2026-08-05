@@ -58,7 +58,7 @@ export function InvoiceConfigCard() {
     setMinAmount((configQuery.data.min_amount_cents / 100).toFixed(2))
     setHistoryCutoff(toDateTimeLocal(configQuery.data.history_cutoff))
     setInvoiceContent(configQuery.data.invoice_content)
-    setOperatorIDs(configQuery.data.operator_user_ids.join(', '))
+    setOperatorIDs((configQuery.data.operator_user_ids ?? []).join(', '))
   }, [configQuery.data])
 
   const mutation = useMutation({
