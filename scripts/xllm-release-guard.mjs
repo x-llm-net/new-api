@@ -134,35 +134,20 @@ function main() {
   }
 
   requireBlob(
-    'web/default/public/logo.png',
+    'web/public/logo.png',
     'a47c4beabc03de009a7d8ea1d147dd8d5baa2c7a',
-    'default frontend keeps X-LLM logo asset'
+    'frontend keeps X-LLM logo asset'
   )
   requireBlob(
-    'web/classic/public/logo.png',
-    'a47c4beabc03de009a7d8ea1d147dd8d5baa2c7a',
-    'classic frontend keeps X-LLM logo asset'
-  )
-  requireBlob(
-    'web/default/public/favicon.ico',
+    'web/public/favicon.ico',
     '67a6e6db843c0b3bf7693379da1ddf651ecd9525',
-    'default frontend keeps X-LLM favicon asset'
-  )
-  requireBlob(
-    'web/classic/public/favicon.ico',
-    '67a6e6db843c0b3bf7693379da1ddf651ecd9525',
-    'classic frontend keeps X-LLM favicon asset'
+    'frontend keeps X-LLM favicon asset'
   )
 
   requireContains(
-    'web/default/index.html',
+    'web/index.html',
     /<link\s+rel=["']icon["'][^>]*href=["']\/favicon\.ico["']/,
-    'default frontend uses favicon.ico as favicon'
-  )
-  requireContains(
-    'web/classic/index.html',
-    /<link\s+rel=["']icon["'][^>]*href=["']\/favicon\.ico["']/,
-    'classic frontend uses favicon.ico as favicon'
+    'frontend uses favicon.ico as favicon'
   )
   requireContains(
     '.github/workflows/docker-build.yml',
@@ -185,15 +170,17 @@ function main() {
     'X-LLM group stability API route is present'
   )
   requireContains(
-    'web/default/src/features/home/index.tsx',
+    'web/src/features/home/index.tsx',
     /<GroupStability\s*\/>/,
     'X-LLM homepage group stability section is mounted'
   )
   requireContains(
-    'web/default/src/features/home/components/sections/home-footer.tsx',
+    'web/src/features/home/components/sections/home-footer.tsx',
     /support@x-llm\.net/,
     'X-LLM homepage footer branding is present'
   )
+  requireFile('web/src/features/xllm-group-stability/api.ts')
+  requireFile('web/src/features/xllm-group-stability/types.ts')
 
   for (const check of checks) {
     const marker = check.ok ? 'PASS' : 'FAIL'
