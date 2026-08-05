@@ -159,6 +159,7 @@ func setupLogin(user *model.User, c *gin.Context) {
 			"role":         user.Role,
 			"status":       user.Status,
 			"group":        user.Group,
+			"permissions":  calculateUserPermissions(user.Id, user.Role),
 		},
 	})
 }
@@ -472,7 +473,7 @@ func GetSelf(c *gin.Context) {
 	user.Remark = ""
 
 	// 计算用户权限信息
-	permissions := calculateUserPermissions(userRole)
+	permissions := calculateUserPermissions(id, userRole)
 	permissions["admin_permissions"] = authz.Capabilities(id, userRole)
 
 	// 获取用户设置并提取sidebar_modules
@@ -516,8 +517,10 @@ func GetSelf(c *gin.Context) {
 }
 
 // 计算用户权限的辅助函数
-func calculateUserPermissions(userRole int) map[string]interface{} {
+func calculateUserPermissions(userID int, userRole int) map[string]interface{} {
 	permissions := map[string]interface{}{}
+	permissions["invoice_enabled"] = operation_setting.GetInvoiceSetting().Enabled
+	permissions["invoice_operator"] = operation_setting.IsInvoiceOperator(userID, userRole)
 
 	// 根据用户角色计算权限
 	if userRole == common.RoleRootUser {

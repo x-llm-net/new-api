@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
@@ -62,6 +64,32 @@ func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	require.Equal(t, "stream", info.TieredBillingSnapshot.EstimatedTier)
 	require.Equal(t, billing_setting.BillingModeTieredExpr, info.TieredBillingSnapshot.BillingMode)
 	require.Equal(t, common.QuotaPerUnit, info.TieredBillingSnapshot.QuotaPerUnit)
+}
+
+func TestModelPriceHelperDoesNotBillInternalXLLMRelay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	savedModelRatios := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedModelRatios))
+	})
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyXLLMRelayNoBilling, true)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "xllm-dynamic-unpriced-model",
+		UserGroup:       "default",
+		UsingGroup:      "llmhub",
+		UserSetting: dto.UserSetting{
+			AcceptUnsetRatioModel: true,
+		},
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 1_000, &types.TokenCountMeta{})
+
+	require.NoError(t, err)
+	require.Zero(t, priceData.GroupRatioInfo.GroupRatio)
+	require.Zero(t, priceData.QuotaToPreConsume)
 }
 
 func TestModelPriceHelperTieredPreConsumeMaxTokensFallback(t *testing.T) {

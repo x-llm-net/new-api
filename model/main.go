@@ -295,11 +295,15 @@ func migrateDB() error {
 		&UserOAuthBinding{},
 		&PerfMetric{},
 		&XLLMGroupStabilitySample{},
+		&XLLMChannelBinding{},
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&InvoiceCredit{},
+		&InvoiceApplication{},
+		&InvoiceAllocation{},
 	)
 	if err != nil {
 		return err
@@ -350,9 +354,13 @@ func migrateDBFast() error {
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 		{&PerfMetric{}, "PerfMetric"},
 		{&XLLMGroupStabilitySample{}, "XLLMGroupStabilitySample"},
+		{&XLLMChannelBinding{}, "XLLMChannelBinding"},
 		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
+		{&InvoiceCredit{}, "InvoiceCredit"},
+		{&InvoiceApplication{}, "InvoiceApplication"},
+		{&InvoiceAllocation{}, "InvoiceAllocation"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
