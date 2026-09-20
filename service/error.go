@@ -88,6 +88,11 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 
 	responseBody, err := io.ReadAll(resp.Body)
+	defer func() {
+		if newApiErr != nil && len(responseBody) > 0 {
+			newApiErr.SetDiagnosticResponseBody(responseBody)
+		}
+	}()
 	if err != nil {
 		return
 	}

@@ -96,6 +96,23 @@ type NewAPIError struct {
 	errorCode      ErrorCode
 	StatusCode     int
 	Metadata       json.RawMessage
+	diagnosticBody []byte
+}
+
+// SetDiagnosticResponseBody stores the raw upstream error body for internal
+// diagnostics. It is intentionally excluded from API responses and logs.
+func (e *NewAPIError) SetDiagnosticResponseBody(body []byte) {
+	if e == nil {
+		return
+	}
+	e.diagnosticBody = append(e.diagnosticBody[:0], body...)
+}
+
+func (e *NewAPIError) DiagnosticResponseBody() []byte {
+	if e == nil || len(e.diagnosticBody) == 0 {
+		return nil
+	}
+	return append([]byte(nil), e.diagnosticBody...)
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.

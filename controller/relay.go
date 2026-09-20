@@ -71,6 +71,7 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	requestId := c.GetString(common.RequestIdKey)
+	service.BeginErrorCapture(c)
 	//group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 	//originalModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 
@@ -107,6 +108,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				})
 			}
 		}
+	}()
+	defer func() {
+		service.FinalizeErrorCapture(c, newAPIError)
 	}()
 
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
@@ -216,6 +220,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
+		c.Set(common.UpstreamRequestIdKey, "")
 
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
@@ -361,6 +366,7 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
+	service.RecordErrorCaptureAttempt(c, channelError, err)
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
@@ -490,23 +496,38 @@ func RelayTaskFetch(c *gin.Context) {
 }
 
 func RelayTask(c *gin.Context) {
+	service.BeginErrorCapture(c)
+	var taskErr *taskdto.TaskError
+	defer func() {
+		var captureErr *types.NewAPIError
+		if taskErr != nil {
+			underlying := taskErr.Error
+			if underlying == nil {
+				underlying = errors.New(taskErr.Message)
+			}
+			captureErr = types.NewOpenAIError(underlying, types.ErrorCode(taskErr.Code), taskErr.StatusCode)
+		}
+		service.FinalizeErrorCapture(c, captureErr)
+	}()
+
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, &taskdto.TaskError{
+		taskErr = &taskdto.TaskError{
 			Code:       "gen_relay_info_failed",
 			Message:    err.Error(),
 			StatusCode: http.StatusInternalServerError,
-		})
+			Error:      err,
+		}
+		respondTaskError(c, taskErr)
 		return
 	}
 
-	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
+	if taskErr = relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
 		respondTaskError(c, taskErr)
 		return
 	}
 
 	var result *relay.TaskSubmitResult
-	var taskErr *taskdto.TaskError
 	defer func() {
 		if taskErr != nil && relayInfo.Billing != nil {
 			relayInfo.Billing.Refund(c)
@@ -553,6 +574,7 @@ func RelayTask(c *gin.Context) {
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
+		c.Set(common.UpstreamRequestIdKey, "")
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
 		if taskErr == nil {
