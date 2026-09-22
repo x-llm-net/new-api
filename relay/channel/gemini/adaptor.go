@@ -40,7 +40,7 @@ func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayIn
 			}
 		}
 	}
-	rewriteGeminiSystemInstructions(c, request)
+	normalizeGeminiRequest(c, request)
 	return request, nil
 }
 
@@ -53,7 +53,7 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 	if !ok {
 		return nil, fmt.Errorf("expected Gemini generateContent request, got %T", result.Value)
 	}
-	rewriteGeminiSystemInstructions(c, geminiRequest)
+	normalizeGeminiRequest(c, geminiRequest)
 	return geminiRequest, nil
 }
 
@@ -193,7 +193,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if !ok {
 		return nil, fmt.Errorf("expected Gemini generateContent request, got %T", result.Value)
 	}
-	rewriteGeminiSystemInstructions(c, geminiRequest)
+	normalizeGeminiRequest(c, geminiRequest)
 	return geminiRequest, nil
 }
 
@@ -254,7 +254,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	if !ok {
 		return nil, fmt.Errorf("expected Gemini generateContent request, got %T", result.Value)
 	}
-	rewriteGeminiSystemInstructions(c, geminiRequest)
+	normalizeGeminiRequest(c, geminiRequest)
 	return geminiRequest, nil
 }
 
