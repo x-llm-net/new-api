@@ -364,6 +364,7 @@ func InitResources() error {
 
 	service.StartAuthArtifactCleanup()
 	service.StartErrorCapture()
+	service.StartDiagnosticCapture()
 
 	return nil
 }

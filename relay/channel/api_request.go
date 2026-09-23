@@ -510,8 +510,10 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	diagnosticCapture := service.BeginDiagnosticCaptureAttempt(c, info)
 	resp, err := client.Do(req)
 	if err != nil {
+		service.FinishDiagnosticCaptureTransportError(diagnosticCapture, err)
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
@@ -533,6 +535,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
 		c.Set(common2.UpstreamRequestIdKey, upID)
 	}
+	service.WrapDiagnosticCaptureResponse(diagnosticCapture, resp)
 
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()
