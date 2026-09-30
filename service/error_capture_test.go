@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -31,6 +32,9 @@ func TestErrorCaptureDefaults(t *testing.T) {
 }
 
 func TestErrorCaptureWritesExactBodyAndRetryHistory(t *testing.T) {
+	previousErrorLog := constant.ErrorLogEnabled
+	constant.ErrorLogEnabled = false
+	t.Cleanup(func() { constant.ErrorLogEnabled = previousErrorLog })
 	root := t.TempDir()
 	manager := startTestErrorCaptureManager(t, root)
 	body := []byte(`{"model":"gemini-test","messages":[{"role":"user","content":"raw prompt"}]}`)
@@ -50,7 +54,7 @@ func TestErrorCaptureWritesExactBodyAndRetryHistory(t *testing.T) {
 	firstErr := types.NewOpenAIError(errors.New("first failure"), types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests)
 	firstErr.SetDiagnosticResponseBody([]byte(`{"error":"rate limited"}`))
 	c.Set(common.UpstreamRequestIdKey, "upstream-first")
-	RecordErrorCaptureAttempt(c, types.ChannelError{ChannelId: 85, ChannelName: "first", ChannelType: 1}, firstErr)
+	ProcessChannelError(c, types.ChannelError{ChannelId: 85, ChannelName: "first", ChannelType: 1}, firstErr, nil)
 
 	secondErr := types.NewOpenAIError(errors.New("second failure"), types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable)
 	secondErr.SetDiagnosticResponseBody([]byte(`{"error":"unavailable"}`))

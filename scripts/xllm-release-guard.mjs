@@ -145,9 +145,9 @@ function main() {
   )
 
   requireContains(
-    'web/index.html',
-    /<link\s+rel=["']icon["'][^>]*href=["']\/favicon\.ico["']/,
-    'frontend uses favicon.ico as favicon'
+    'web/rsbuild.config.ts',
+    /favicon:\s*['"]\.\/public\/favicon\.ico['"]/,
+    'frontend build uses the X-LLM favicon asset'
   )
   requireContains(
     '.github/workflows/docker-build.yml',
