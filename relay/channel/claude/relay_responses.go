@@ -17,6 +17,7 @@ import (
 )
 
 func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	receivedBefore := info.ReceivedResponseCount
 	responseID := helper.GetResponseID(c)
 	created := common.GetTimestamp()
 	state, err := relayconvert.NewResponseStreamState(types.RelayFormatClaude, types.RelayFormatOpenAIResponses, relayconvert.ResponseStreamOptions{
@@ -160,6 +161,11 @@ func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *rel
 	})
 	if streamErr != nil {
 		return nil, streamErr
+	}
+	// Apply the same empty-stream billing guard before conversion can synthesize
+	// a completed response and estimated usage.
+	if info.ReceivedResponseCount == receivedBefore {
+		return nil, types.NewErrorWithStatusCode(fmt.Errorf("upstream Claude stream returned no data"), types.ErrorCodeEmptyResponse, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
 	}
 	if streamFailed {
 		return claudeInfo.Usage, nil

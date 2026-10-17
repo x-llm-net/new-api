@@ -292,6 +292,7 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 }
 
 func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	receivedBefore := info.ReceivedResponseCount
 	claudeInfo := &ClaudeResponseInfo{
 		ResponseId:   helper.GetResponseID(c),
 		Created:      common.GetTimestamp(),
@@ -309,6 +310,11 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	info.StreamStatus.RequireTerminal()
 	if err != nil {
 		return nil, err
+	}
+	// An empty attempt has no usage or output to estimate. Fail before settlement
+	// so the request's existing billing session refunds any reservation.
+	if info.ReceivedResponseCount == receivedBefore {
+		return nil, types.NewErrorWithStatusCode(fmt.Errorf("upstream Claude stream returned no data"), types.ErrorCodeEmptyResponse, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)

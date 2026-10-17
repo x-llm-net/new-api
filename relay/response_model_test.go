@@ -1,11 +1,13 @@
 package relay
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -22,6 +24,113 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type emptyStreamBilling struct {
+	reserved int
+	refunded bool
+}
+
+func (b *emptyStreamBilling) Settle(int) error         { return nil }
+func (b *emptyStreamBilling) NeedsRefund() bool        { return b.reserved > 0 && !b.refunded }
+func (b *emptyStreamBilling) GetPreConsumedQuota() int { return b.reserved }
+func (b *emptyStreamBilling) Reserve(n int) error      { b.reserved = n; return nil }
+func (b *emptyStreamBilling) Refund(*gin.Context)      { b.refunded = true }
+
+func TestClaudeEmptyStreamDoesNotEstimateOrSettle(t *testing.T) {
+	previousTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = previousTimeout })
+	for _, format := range []types.RelayFormat{types.RelayFormatClaude, types.RelayFormatOpenAI, types.RelayFormatGemini, types.RelayFormatOpenAIResponses} {
+		for _, tc := range []struct {
+			name           string
+			body           string
+			cancelled      bool
+			readError      bool
+			previousChunks int
+		}{
+			{name: "empty EOF"},
+			{name: "client disconnected", cancelled: true},
+			{name: "read failure", readError: true},
+			{name: "heartbeat only", body: ": keepalive\n\n"},
+			{name: "done only", body: "data: [DONE]\n\n"},
+			{name: "empty retry after prior chunks", previousChunks: 3},
+		} {
+			t.Run(string(format)+"/"+tc.name, func(t *testing.T) {
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+				if tc.cancelled {
+					ctx, cancel := context.WithCancel(c.Request.Context())
+					cancel()
+					c.Request = c.Request.WithContext(ctx)
+				}
+				billing := &emptyStreamBilling{reserved: 1000}
+				info := &relaycommon.RelayInfo{
+					RelayFormat: format, IsStream: true, DisablePing: true, StartTime: time.Now(),
+					ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "claude-test"},
+					Billing:     billing, ReceivedResponseCount: tc.previousChunks,
+				}
+				info.SetEstimatePromptTokens(12_000_000)
+				var body io.Reader = strings.NewReader(tc.body)
+				if tc.readError {
+					body = iotest.ErrReader(io.ErrUnexpectedEOF)
+				}
+				resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(body)}
+				handler := claude.ClaudeStreamHandler
+				if format == types.RelayFormatOpenAIResponses {
+					handler = claude.ClaudeResponsesStreamHandler
+				}
+				usage, apiErr := handler(c, resp, info)
+				require.NotNil(t, apiErr, "empty upstream stream must take the failure/refund path")
+				assert.Nil(t, usage, "request estimates must never become billable usage for an empty stream")
+				assert.Equal(t, types.ErrorCodeEmptyResponse, apiErr.GetErrorCode())
+				assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+				assert.False(t, common.GetContextKeyBool(c, constant.ContextKeyLocalCountTokens))
+				assert.Equal(t, "stop", service.DecideRelayRetry(c, apiErr, 2).Action)
+				assert.Same(t, apiErr, RefundFailedRequestBilling(c, info, apiErr))
+				assert.True(t, billing.refunded, "existing failure policy must refund the reservation")
+			})
+		}
+	}
+}
+
+func TestClaudeNonEmptyStreamPreservesUsage(t *testing.T) {
+	previousTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = previousTimeout })
+	for _, tc := range []struct {
+		name                             string
+		chunks                           []string
+		wantInput, wantOutput, wantCache int
+		wantEstimated                    bool
+	}{
+		{name: "reported input without output", chunks: []string{`{"type":"message_start","message":{"id":"msg_1","model":"claude-test","usage":{"input_tokens":100,"output_tokens":0}}}`}, wantInput: 100},
+		{name: "partial text without usage", chunks: []string{`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}`}, wantInput: 1200, wantEstimated: true},
+		{name: "tool call without text", chunks: []string{`{"type":"message_start","message":{"id":"msg_1","model":"claude-test","usage":{"input_tokens":100,"output_tokens":1}}}`, `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_1","name":"lookup","input":{}}}`, `{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":20}}`, `{"type":"message_stop"}`}, wantInput: 100, wantOutput: 20},
+		{name: "completed cached response", chunks: []string{`{"type":"message_start","message":{"id":"msg_1","model":"claude-test","usage":{"input_tokens":100,"output_tokens":1,"cache_read_input_tokens":900}}}`, `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}`, `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":20}}`, `{"type":"message_stop"}`}, wantInput: 100, wantOutput: 20, wantCache: 900},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatClaude, IsStream: true, DisablePing: true, StartTime: time.Now(), ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "claude-test"}}
+			info.SetEstimatePromptTokens(1200)
+			body := "data: " + strings.Join(tc.chunks, "\n\ndata: ") + "\n\n"
+			usage, apiErr := claude.ClaudeStreamHandler(c, &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, info)
+			require.Nil(t, apiErr)
+			require.NotNil(t, usage)
+			assert.Equal(t, tc.wantInput, usage.PromptTokens)
+			assert.Equal(t, tc.wantCache, usage.PromptTokensDetails.CachedTokens)
+			if tc.wantEstimated {
+				assert.Positive(t, usage.CompletionTokens)
+			} else {
+				assert.Equal(t, tc.wantOutput, usage.CompletionTokens)
+			}
+			canonical, ok := usage.BillingUsage.CanonicalUsage()
+			require.True(t, ok)
+			assert.Equal(t, usage.PromptTokens, canonical.PromptTokens)
+			assert.Equal(t, usage.CompletionTokens, canonical.CompletionTokens)
+		})
+	}
+}
 
 func TestResponseModelComparisonAndLog(t *testing.T) {
 	for _, tc := range []struct {
