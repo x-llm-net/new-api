@@ -333,6 +333,19 @@ export async function runImageStudioBrowserFlow(
       .first()
       .click()
     assert.equal(await editor.textContent(), draft)
+    await page.waitForFunction(
+      ({ x, width }) => {
+        const bounds = document
+          .querySelector('[aria-label="Image preview"] img')
+          ?.getBoundingClientRect()
+        return (
+          bounds &&
+          Math.abs(bounds.x - x) < 1 &&
+          Math.abs(bounds.width - width) < 1
+        )
+      },
+      { x: imageBox.x, width: imageBox.width }
+    )
     imageBox = await image.boundingBox()
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.down({ button: 'right' })
@@ -438,6 +451,13 @@ export async function runImageStudioBrowserFlow(
       .getByRole('button', { name: 'Creation settings', exact: true })
       .click()
     const dialog = page.getByRole('dialog', { name: 'Creation settings' })
+    await dialog.evaluate(async (element) => {
+      await Promise.all(
+        element
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished)
+      )
+    })
     assert.ok(
       !(await dialog.textContent()).includes('default'),
       'legacy group identifiers must not be presented as routing information'
