@@ -1,0 +1,33 @@
+.studio-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.studio-reference {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  margin-inline: 0.2rem;
+  padding-inline: 0.3rem;
+  border-radius: 999px;
+  background: #2563eb;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+  user-select: all;
+  cursor: pointer;
+  border: 0;
+}
+
+.studio-reference:hover {
+  background: #1d4ed8;
+}
+
+.studio-reference:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
