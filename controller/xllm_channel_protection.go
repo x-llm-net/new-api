@@ -27,6 +27,7 @@ type xllmProtectionConfig struct {
 	Interval      int64                    `json:"interval"`
 	Window        int64                    `json:"window"`
 	SlowMS        float64                  `json:"slow_ms"`
+	SlowMSByGroup map[string]float64       `json:"slow_ms_by_group,omitempty"`
 	SlowRate      float64                  `json:"slow_rate"`
 	MinSamples    int                      `json:"min_samples"`
 	Fallbacks     []xllmProtectionFallback `json:"fallbacks"`
@@ -39,20 +40,22 @@ type xllmProtectionFallback struct {
 }
 
 type xllmProtectionChannel struct {
-	ID         int    `json:"id"`
-	Name       string `json:"name"`
-	Status     int    `json:"status"`
-	StatusTime int64  `json:"status_time"`
+	ID         int     `json:"id"`
+	Name       string  `json:"name"`
+	Status     int     `json:"status"`
+	StatusTime int64   `json:"status_time"`
+	SlowMS     float64 `json:"slow_ms"`
 }
 
 type xllmProtectionEvidence struct {
-	ChannelID   int   `json:"channel_id"`
-	StatusTime  int64 `json:"status_time"`
-	Total       int   `json:"total"`
-	Slow        int   `json:"slow"`
-	Unknown     int   `json:"unknown"`
-	WindowStart int64 `json:"window_start"`
-	WindowEnd   int64 `json:"window_end"`
+	ChannelID   int     `json:"channel_id"`
+	StatusTime  int64   `json:"status_time"`
+	Total       int     `json:"total"`
+	Slow        int     `json:"slow"`
+	Unknown     int     `json:"unknown"`
+	WindowStart int64   `json:"window_start"`
+	WindowEnd   int64   `json:"window_end"`
+	SlowMS      float64 `json:"slow_ms,omitempty"`
 }
 
 var xllmProtectionLock sync.Mutex
@@ -101,6 +104,11 @@ func validXLLMProtectionConfig(c xllmProtectionConfig) bool {
 			return false
 		}
 	}
+	for group, slowMS := range c.SlowMSByGroup {
+		if !slices.Contains(c.ChannelGroups, group) || slowMS <= 0 || math.IsNaN(slowMS) || math.IsInf(slowMS, 0) {
+			return false
+		}
+	}
 	for _, f := range c.Fallbacks {
 		ids := map[int]bool{}
 		for _, id := range f.Channels {
@@ -116,7 +124,7 @@ func validXLLMProtectionConfig(c xllmProtectionConfig) bool {
 	return true
 }
 
-func xllmProtectionChannels(groups []string) ([]xllmProtectionChannel, error) {
+func xllmProtectionChannels(config xllmProtectionConfig) ([]xllmProtectionChannel, error) {
 	var channels []model.Channel
 	// Never select or expose channel keys, headers, URLs, or other secrets.
 	if err := model.DB.Select("id", "name", "status", "group", "other_info").Find(&channels).Error; err != nil {
@@ -124,18 +132,23 @@ func xllmProtectionChannels(groups []string) ([]xllmProtectionChannel, error) {
 	}
 	result := make([]xllmProtectionChannel, 0)
 	for _, ch := range channels {
-		inScope := false
+		var slowMS float64
 		for group := range strings.SplitSeq(ch.Group, ",") {
-			if slices.Contains(groups, group) {
-				inScope = true
-				break
+			if !slices.Contains(config.ChannelGroups, group) {
+				continue
 			}
+			threshold, overridden := config.SlowMSByGroup[group]
+			if !overridden {
+				threshold = config.SlowMS
+			}
+			// A global channel ban uses the more tolerant threshold when shared.
+			slowMS = max(slowMS, threshold)
 		}
-		if !inScope {
+		if slowMS == 0 {
 			continue
 		}
 		changed, _ := ch.GetOtherInfo()["status_time"].(float64)
-		result = append(result, xllmProtectionChannel{ch.Id, ch.Name, ch.Status, int64(changed)})
+		result = append(result, xllmProtectionChannel{ID: ch.Id, Name: ch.Name, Status: ch.Status, StatusTime: int64(changed), SlowMS: slowMS})
 	}
 	return result, nil
 }
@@ -147,7 +160,7 @@ func GetXLLMChannelProtection(c *gin.Context) {
 	if !ok {
 		return
 	}
-	channels, err := xllmProtectionChannels(config.ChannelGroups)
+	channels, err := xllmProtectionChannels(config)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false})
 		return
@@ -182,7 +195,7 @@ func ApplyXLLMChannelProtection(c *gin.Context) {
 			results = append(results, gin.H{"channel_id": e.ChannelID, "result": "invalid_evidence"})
 			continue
 		}
-		channels, err := xllmProtectionChannels(config.ChannelGroups)
+		channels, err := xllmProtectionChannels(config)
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "results": results})
 			return
@@ -190,6 +203,11 @@ func ApplyXLLMChannelProtection(c *gin.Context) {
 		idx := slices.IndexFunc(channels, func(ch xllmProtectionChannel) bool { return ch.ID == e.ChannelID })
 		if idx < 0 || channels[idx].Status != common.ChannelStatusEnabled || channels[idx].StatusTime != e.StatusTime {
 			results = append(results, gin.H{"channel_id": e.ChannelID, "result": "channel_changed"})
+			continue
+		}
+		// A legacy collector may omit the threshold only for a uniform policy.
+		if (e.SlowMS != 0 || len(config.SlowMSByGroup) > 0) && e.SlowMS != channels[idx].SlowMS {
+			results = append(results, gin.H{"channel_id": e.ChannelID, "result": "invalid_evidence"})
 			continue
 		}
 		blocked := ""
@@ -212,7 +230,7 @@ func ApplyXLLMChannelProtection(c *gin.Context) {
 			results = append(results, gin.H{"channel_id": e.ChannelID, "result": "fallback_retained", "fallback": blocked})
 			continue
 		}
-		reason := fmt.Sprintf("xllm-channel-protection: %.1f%% (%d/%d) over %.0fms", float64(e.Slow)*100/float64(e.Total), e.Slow, e.Total, config.SlowMS)
+		reason := fmt.Sprintf("xllm-channel-protection: %.1f%% (%d/%d) over %.0fms", float64(e.Slow)*100/float64(e.Total), e.Slow, e.Total, channels[idx].SlowMS)
 		changed := model.AutoDisableChannelIfCurrent(e.ChannelID, e.StatusTime, reason)
 		if !changed {
 			model.InitChannelCache()

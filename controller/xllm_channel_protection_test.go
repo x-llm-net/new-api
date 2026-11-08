@@ -175,6 +175,8 @@ func TestXLLMProtectionDatabaseMatrix(t *testing.T) {
 			var policy xllmProtectionConfig
 			require.NoError(t, common.Unmarshal(raw, &policy))
 			policy.ChannelGroups = []string{"gemini", "codex"}
+			policy.SlowMS = 60000
+			policy.SlowMSByGroup = map[string]float64{"gemini": 15000, "codex": 30000}
 			policy.Fallbacks = append(policy.Fallbacks, xllmProtectionFallback{Name: "codex", Channels: []int{7, 8}, MinEnabled: 1})
 			raw, err = common.Marshal(policy)
 			require.NoError(t, err)
@@ -184,12 +186,30 @@ func TestXLLMProtectionDatabaseMatrix(t *testing.T) {
 			status, snapshot = protectionRequest(t, http.MethodGet, key, nil)
 			require.Equal(t, http.StatusOK, status)
 			var ids []int
+			thresholds := map[int]float64{}
 			for _, item := range snapshot["channels"].([]any) {
-				ids = append(ids, int(item.(map[string]any)["id"].(float64)))
+				channel := item.(map[string]any)
+				id := int(channel["id"].(float64))
+				ids = append(ids, id)
+				thresholds[id] = channel["slow_ms"].(float64)
 			}
 			assert.ElementsMatch(t, []int{1, 2, 3, 4, 6, 7, 8, 9}, ids)
+			assert.Equal(t, float64(15000), thresholds[2])
+			assert.Equal(t, float64(30000), thresholds[7])
+			assert.Equal(t, float64(30000), thresholds[9], "a shared channel uses the more tolerant matched threshold")
 			now = time.Now().Unix()
-			status, resp = protectionRequest(t, http.MethodPost, key, map[string]any{"version": snapshot["version"], "candidates": []xllmProtectionEvidence{evidence(7), evidence(8), evidence(10)}})
+			for _, threshold := range []float64{0, 15000, 60000} {
+				wrong := evidence(7)
+				wrong.SlowMS = threshold
+				status, resp = protectionRequest(t, http.MethodPost, key, map[string]any{"version": snapshot["version"], "candidates": []xllmProtectionEvidence{wrong}})
+				require.Equal(t, http.StatusOK, status)
+				assert.Equal(t, "invalid_evidence", resp["results"].([]any)[0].(map[string]any)["result"])
+			}
+			codexCandidates := []xllmProtectionEvidence{evidence(7), evidence(8), evidence(10)}
+			for i := range codexCandidates {
+				codexCandidates[i].SlowMS = 30000
+			}
+			status, resp = protectionRequest(t, http.MethodPost, key, map[string]any{"version": snapshot["version"], "candidates": codexCandidates})
 			require.Equal(t, http.StatusOK, status)
 			results := resp["results"].([]any)
 			require.Len(t, results, 3)
@@ -201,9 +221,13 @@ func TestXLLMProtectionDatabaseMatrix(t *testing.T) {
 				require.NoError(t, db.First(&current, id).Error)
 				assert.Equal(t, want, current.Status)
 			}
+			var audit model.AuditLog
+			require.NoError(t, db.Where("action = ? AND content LIKE ?", "channel.protection_auto_disable", "channel=7 %").First(&audit).Error)
+			assert.Contains(t, audit.Content, "over 30000ms")
 
 			// The explicit list replaces legacy scope rather than silently adding it.
 			policy.ChannelGroups = []string{"codex"}
+			delete(policy.SlowMSByGroup, "gemini")
 			raw, err = common.Marshal(policy)
 			require.NoError(t, err)
 			require.NoError(t, os.WriteFile(path, raw, 0600))
@@ -213,6 +237,15 @@ func TestXLLMProtectionDatabaseMatrix(t *testing.T) {
 			status, resp = protectionRequest(t, http.MethodPost, key, map[string]any{"version": snapshot["version"], "candidates": []xllmProtectionEvidence{evidence(2)}})
 			require.Equal(t, http.StatusOK, status)
 			assert.Equal(t, "channel_changed", resp["results"].([]any)[0].(map[string]any)["result"])
+			for _, overrides := range []map[string]float64{{"codex": -1}, {"unknown": 30000}} {
+				policy.SlowMSByGroup = overrides
+				raw, err = common.Marshal(policy)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(path, raw, 0600))
+				status, _ = protectionRequest(t, http.MethodGet, key, nil)
+				assert.Equal(t, http.StatusServiceUnavailable, status)
+			}
+			policy.SlowMSByGroup = nil
 			policy.ChannelGroups = []string{"codex", " "}
 			raw, err = common.Marshal(policy)
 			require.NoError(t, err)
