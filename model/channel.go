@@ -753,6 +753,16 @@ func hasEnabledMultiKey(keys []string, statusList map[int]int) bool {
 }
 
 func UpdateChannelStatus(channelId int, usingKey string, status int, reason string) bool {
+	return updateChannelStatus(channelId, usingKey, status, reason, nil)
+}
+
+// AutoDisableChannelIfCurrent must not turn a concurrent manual disable into an
+// auto-disable, or a subsequent channel test could undo the operator's decision.
+func AutoDisableChannelIfCurrent(channelId int, statusTime int64, reason string) bool {
+	return updateChannelStatus(channelId, "", common.ChannelStatusAutoDisabled, reason, &statusTime)
+}
+
+func updateChannelStatus(channelId int, usingKey string, status int, reason string, expectedTime *int64) bool {
 	if common.MemoryCacheEnabled {
 		channelStatusLock.Lock()
 		defer channelStatusLock.Unlock()
@@ -764,6 +774,16 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	pollingLock := GetChannelPollingLock(channelId)
 	pollingLock.Lock()
 	defer pollingLock.Unlock()
+	if expectedTime != nil {
+		current, err := GetChannelById(channelId, true)
+		if err != nil || current.Status != common.ChannelStatusEnabled {
+			return false
+		}
+		changed, _ := current.GetOtherInfo()["status_time"].(float64)
+		if int64(changed) != *expectedTime {
+			return false
+		}
+	}
 
 	if common.MemoryCacheEnabled {
 		channelCache, _ := CacheGetChannel(channelId)
