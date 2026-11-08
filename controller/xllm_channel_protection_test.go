@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,14 +99,23 @@ func TestXLLMProtectionDatabaseMatrix(t *testing.T) {
 					require.NoError(t, connection.Close())
 				}
 			})
-			_, key := protectionTestConfig(t)
-			for id := 1; id <= 6; id++ {
+			path, key := protectionTestConfig(t)
+			for i := range 10 {
+				id := i + 1
 				group, status := "gemini", common.ChannelStatusEnabled
 				if id == 5 {
 					group = "unrelated"
 				}
 				if id == 6 {
 					status = common.ChannelStatusManuallyDisabled
+				}
+				switch id {
+				case 7, 8:
+					group = "codex"
+				case 9:
+					group = "gemini,codex"
+				case 10:
+					group = "codex-extra"
 				}
 				ch := model.Channel{Id: id, Name: "test", Type: 1, Key: "secret-must-never-appear", Group: group, Models: "model", Status: status}
 				require.NoError(t, db.Create(&ch).Error)
@@ -116,7 +126,7 @@ func TestXLLMProtectionDatabaseMatrix(t *testing.T) {
 			encoded, _ := common.Marshal(snapshot)
 			require.NotContains(t, string(encoded), "secret-must-never-appear")
 			require.NotContains(t, string(encoded), key)
-			require.Len(t, snapshot["channels"], 5)
+			assert.Len(t, snapshot["channels"], 6)
 			now := time.Now().Unix()
 			evidence := func(id int) xllmProtectionEvidence {
 				return xllmProtectionEvidence{ChannelID: id, Total: 100, Slow: 80, WindowStart: now - 300, WindowEnd: now}
@@ -126,9 +136,9 @@ func TestXLLMProtectionDatabaseMatrix(t *testing.T) {
 			_, resp := protectionRequest(t, http.MethodPost, key, map[string]any{"version": snapshot["version"], "candidates": []xllmProtectionEvidence{bad}})
 			require.Contains(t, resp["results"].([]any)[0], "result")
 			require.Equal(t, "invalid_evidence", resp["results"].([]any)[0].(map[string]any)["result"])
-			candidates := []xllmProtectionEvidence{evidence(1), evidence(2), evidence(3), evidence(4), evidence(5), evidence(6)}
+			candidates := []xllmProtectionEvidence{evidence(1), evidence(2), evidence(3), evidence(4), evidence(5), evidence(6), evidence(7)}
 			_, resp = protectionRequest(t, http.MethodPost, key, map[string]any{"version": snapshot["version"], "candidates": candidates})
-			expected := []string{"disabled", "fallback_retained", "disabled", "fallback_retained", "channel_changed", "channel_changed"}
+			expected := []string{"disabled", "fallback_retained", "disabled", "fallback_retained", "channel_changed", "channel_changed", "channel_changed"}
 			for i, item := range resp["results"].([]any) {
 				require.Equal(t, expected[i], item.(map[string]any)["result"])
 			}
@@ -158,6 +168,57 @@ func TestXLLMProtectionDatabaseMatrix(t *testing.T) {
 			require.False(t, model.AutoDisableChannelIfCurrent(3, 0, "old window"))
 			status, _ = protectionRequest(t, http.MethodPost, key, map[string]any{"version": "stale", "candidates": candidates})
 			require.Equal(t, http.StatusConflict, status)
+
+			// Adding a second group hot-reloads its scope and keeps separate fallbacks.
+			raw, err := os.ReadFile(path)
+			require.NoError(t, err)
+			var policy xllmProtectionConfig
+			require.NoError(t, common.Unmarshal(raw, &policy))
+			policy.ChannelGroups = []string{"gemini", "codex"}
+			policy.Fallbacks = append(policy.Fallbacks, xllmProtectionFallback{Name: "codex", Channels: []int{7, 8}, MinEnabled: 1})
+			raw, err = common.Marshal(policy)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(path, raw, 0600))
+			status, _ = protectionRequest(t, http.MethodPost, key, map[string]any{"version": snapshot["version"], "candidates": []xllmProtectionEvidence{evidence(7)}})
+			assert.Equal(t, http.StatusConflict, status)
+			status, snapshot = protectionRequest(t, http.MethodGet, key, nil)
+			require.Equal(t, http.StatusOK, status)
+			var ids []int
+			for _, item := range snapshot["channels"].([]any) {
+				ids = append(ids, int(item.(map[string]any)["id"].(float64)))
+			}
+			assert.ElementsMatch(t, []int{1, 2, 3, 4, 6, 7, 8, 9}, ids)
+			now = time.Now().Unix()
+			status, resp = protectionRequest(t, http.MethodPost, key, map[string]any{"version": snapshot["version"], "candidates": []xllmProtectionEvidence{evidence(7), evidence(8), evidence(10)}})
+			require.Equal(t, http.StatusOK, status)
+			results := resp["results"].([]any)
+			require.Len(t, results, 3)
+			for i, want := range []string{"disabled", "fallback_retained", "channel_changed"} {
+				assert.Equal(t, want, results[i].(map[string]any)["result"])
+			}
+			for id, want := range map[int]int{2: 1, 4: 1, 7: 3, 8: 1, 10: 1} {
+				var current model.Channel
+				require.NoError(t, db.First(&current, id).Error)
+				assert.Equal(t, want, current.Status)
+			}
+
+			// The explicit list replaces legacy scope rather than silently adding it.
+			policy.ChannelGroups = []string{"codex"}
+			raw, err = common.Marshal(policy)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(path, raw, 0600))
+			status, snapshot = protectionRequest(t, http.MethodGet, key, nil)
+			require.Equal(t, http.StatusOK, status)
+			assert.Len(t, snapshot["channels"], 3)
+			status, resp = protectionRequest(t, http.MethodPost, key, map[string]any{"version": snapshot["version"], "candidates": []xllmProtectionEvidence{evidence(2)}})
+			require.Equal(t, http.StatusOK, status)
+			assert.Equal(t, "channel_changed", resp["results"].([]any)[0].(map[string]any)["result"])
+			policy.ChannelGroups = []string{"codex", " "}
+			raw, err = common.Marshal(policy)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(path, raw, 0600))
+			status, _ = protectionRequest(t, http.MethodGet, key, nil)
+			assert.Equal(t, http.StatusServiceUnavailable, status)
 		})
 	}
 }

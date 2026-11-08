@@ -20,15 +20,16 @@ import (
 // A dedicated, revocable credential grants only this operation, not dashboard
 // access. Configuration is read on every call; absent/invalid config fails closed.
 type xllmProtectionConfig struct {
-	Enabled      bool                     `json:"enabled"`
-	ChannelGroup string                   `json:"channel_group"`
-	SampleGroups []string                 `json:"sample_groups"`
-	Interval     int64                    `json:"interval"`
-	Window       int64                    `json:"window"`
-	SlowMS       float64                  `json:"slow_ms"`
-	SlowRate     float64                  `json:"slow_rate"`
-	MinSamples   int                      `json:"min_samples"`
-	Fallbacks    []xllmProtectionFallback `json:"fallbacks"`
+	Enabled       bool                     `json:"enabled"`
+	ChannelGroup  string                   `json:"channel_group,omitempty"`
+	ChannelGroups []string                 `json:"channel_groups,omitempty"`
+	SampleGroups  []string                 `json:"sample_groups"`
+	Interval      int64                    `json:"interval"`
+	Window        int64                    `json:"window"`
+	SlowMS        float64                  `json:"slow_ms"`
+	SlowRate      float64                  `json:"slow_rate"`
+	MinSamples    int                      `json:"min_samples"`
+	Fallbacks     []xllmProtectionFallback `json:"fallbacks"`
 }
 
 type xllmProtectionFallback struct {
@@ -70,7 +71,14 @@ func xllmProtectionSettings(c *gin.Context) (xllmProtectionConfig, string, bool)
 		return config, "", false
 	}
 	body, err := os.ReadFile(path)
-	if err != nil || common.Unmarshal(body, &config) != nil || !validXLLMProtectionConfig(config) {
+	if err == nil {
+		err = common.Unmarshal(body, &config)
+	}
+	// An explicit list takes precedence; keep existing single-group policies valid.
+	if len(config.ChannelGroups) == 0 && config.ChannelGroup != "" {
+		config.ChannelGroups = []string{config.ChannelGroup}
+	}
+	if err != nil || !validXLLMProtectionConfig(config) {
 		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "channel protection configuration unavailable"})
 		return config, "", false
 	}
@@ -80,10 +88,15 @@ func xllmProtectionSettings(c *gin.Context) (xllmProtectionConfig, string, bool)
 }
 
 func validXLLMProtectionConfig(c xllmProtectionConfig) bool {
-	if c.ChannelGroup == "" || len(c.SampleGroups) == 0 || c.Interval < 60 || c.Interval > 3600 || c.Window < 60 || c.Window > 900 || c.MinSamples < 20 || c.SlowMS <= 0 || math.IsNaN(c.SlowMS) || math.IsInf(c.SlowMS, 0) || c.SlowRate <= 0 || c.SlowRate >= 1 || math.IsNaN(c.SlowRate) || len(c.Fallbacks) == 0 {
+	if len(c.ChannelGroups) == 0 || len(c.SampleGroups) == 0 || c.Interval < 60 || c.Interval > 3600 || c.Window < 60 || c.Window > 900 || c.MinSamples < 20 || c.SlowMS <= 0 || math.IsNaN(c.SlowMS) || math.IsInf(c.SlowMS, 0) || c.SlowRate <= 0 || c.SlowRate >= 1 || math.IsNaN(c.SlowRate) || len(c.Fallbacks) == 0 {
 		return false
 	}
 	for _, group := range c.SampleGroups {
+		if strings.TrimSpace(group) == "" {
+			return false
+		}
+	}
+	for _, group := range c.ChannelGroups {
 		if strings.TrimSpace(group) == "" {
 			return false
 		}
@@ -103,7 +116,7 @@ func validXLLMProtectionConfig(c xllmProtectionConfig) bool {
 	return true
 }
 
-func xllmProtectionChannels(group string) ([]xllmProtectionChannel, error) {
+func xllmProtectionChannels(groups []string) ([]xllmProtectionChannel, error) {
 	var channels []model.Channel
 	// Never select or expose channel keys, headers, URLs, or other secrets.
 	if err := model.DB.Select("id", "name", "status", "group", "other_info").Find(&channels).Error; err != nil {
@@ -111,7 +124,14 @@ func xllmProtectionChannels(group string) ([]xllmProtectionChannel, error) {
 	}
 	result := make([]xllmProtectionChannel, 0)
 	for _, ch := range channels {
-		if !slices.Contains(strings.Split(ch.Group, ","), group) {
+		inScope := false
+		for group := range strings.SplitSeq(ch.Group, ",") {
+			if slices.Contains(groups, group) {
+				inScope = true
+				break
+			}
+		}
+		if !inScope {
 			continue
 		}
 		changed, _ := ch.GetOtherInfo()["status_time"].(float64)
@@ -127,7 +147,7 @@ func GetXLLMChannelProtection(c *gin.Context) {
 	if !ok {
 		return
 	}
-	channels, err := xllmProtectionChannels(config.ChannelGroup)
+	channels, err := xllmProtectionChannels(config.ChannelGroups)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false})
 		return
@@ -162,7 +182,7 @@ func ApplyXLLMChannelProtection(c *gin.Context) {
 			results = append(results, gin.H{"channel_id": e.ChannelID, "result": "invalid_evidence"})
 			continue
 		}
-		channels, err := xllmProtectionChannels(config.ChannelGroup)
+		channels, err := xllmProtectionChannels(config.ChannelGroups)
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "results": results})
 			return
