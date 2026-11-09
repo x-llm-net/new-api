@@ -171,6 +171,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	var hasBillableUsageMetadata bool
 	var streamErr error
 	var responseStarted bool
+	var policyNotice bool
 	var accumulatedUsageMetadata *dto.GeminiUsageMetadata
 	responseText := strings.Builder{}
 
@@ -198,6 +199,17 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		if len(geminiResponse.Candidates) == 0 && geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
 			info.PerformanceBusinessRejection = true
 			common.SetContextKey(c, constant.ContextKeyAdminRejectReason, fmt.Sprintf("gemini_block_reason=%s", *geminiResponse.PromptFeedback.BlockReason))
+			if reason := *geminiResponse.PromptFeedback.BlockReason; reason != "" && reason != "BLOCK_REASON_UNSPECIFIED" {
+				info.StreamStatus.MarkCompleted()
+			}
+		}
+		// Some compatible endpoints return this exact single-frame rejection without a finishReason.
+		if len(geminiResponse.Candidates) == 1 && len(geminiResponse.Candidates[0].Content.Parts) == 1 {
+			part := geminiResponse.Candidates[0].Content.Parts[0]
+			policyNotice = !part.Thought && part.FunctionCall == nil && part.InlineData == nil &&
+				part.Text == "The prompt could not be submitted. The prompt contains sensitive words that violate Google's [Generative AI Prohibited Use policy](https://policies.google.com/terms/generative-ai/use-policy). Try rephrasing the prompt. If you think this was an error, [send feedback](https://aistudio.google.com/docs/troubleshooting)."
+		} else {
+			policyNotice = false
 		}
 		info.ObserveResponseModel(gjson.Get(data, "modelVersion").Str)
 		for _, candidate := range geminiResponse.Candidates {
@@ -246,6 +258,22 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 	})
 	info.StreamStatus.RequireTerminal()
+	if streamErr == nil && info.StreamStatus != nil && !isGeminiDownstreamStop(c, info) && info.StreamStatus.ResponseOutcome() == "" {
+		switch {
+		case info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone && responseStarted:
+			info.StreamStatus.MarkCompleted()
+		case policyNotice && info.ReceivedResponseCount == 1 && info.StreamStatus.EndReason == relaycommon.StreamEndReasonEOF:
+			info.PerformanceBusinessRejection = true
+			common.SetContextKey(c, constant.ContextKeyAdminRejectReason, "gemini_policy_notice")
+			info.StreamStatus.MarkCompleted()
+		default:
+			apiErr := types.NewOpenAIError(errors.New("Response ended before completion."), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			info.StreamStatus.MarkFailed(string(apiErr.GetErrorCode()), apiErr.ToOpenAIError().Type, apiErr.StatusCode)
+			info.StreamStatus.RecordError(apiErr.Error())
+			common.SetContextKey(c, constant.ContextKeyUpstreamStreamError, true)
+			streamErr = apiErr
+		}
+	}
 
 	if !hasBillableUsageMetadata {
 		if info.ReceivedResponseCount > 0 {
