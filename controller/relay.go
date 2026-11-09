@@ -224,33 +224,34 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 func writeRelayErrorResponse(c *gin.Context, format types.RelayFormat, apiErr *types.NewAPIError) {
 	openAIError := apiErr.ToOpenAIError()
 	claudeError := apiErr.ToClaudeError()
+	_, prepared := c.Get("event_stream_headers_set")
 	if common.GetContextKeyBool(c, constant.ContextKeyUpstreamStreamError) {
 		openAIError.Message = apiErr.MaskSensitiveError()
 		claudeError.Message = openAIError.Message
-		if c.Writer.Written() {
-			// HTTP status is already committed; report failure inside the SSE stream.
-			var writeErr error
-			switch format {
-			case types.RelayFormatClaude:
-				writeErr = helper.ClaudeData(c, dto.ClaudeResponse{Type: "error", Error: &claudeError})
-			case types.RelayFormatOpenAIResponses:
-				data, err := common.Marshal(gin.H{"type": "error", "code": string(apiErr.GetErrorCode()), "message": openAIError.Message, "param": openAIError.Param})
-				writeErr = err
-				if err == nil {
-					writeErr = helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: "error"}, string(data))
-				}
-			case types.RelayFormatGemini:
-				writeErr = helper.ObjectData(c, gin.H{"error": gin.H{"code": apiErr.StatusCode, "message": openAIError.Message}})
-			default:
-				writeErr = helper.ObjectData(c, gin.H{"error": openAIError})
-			}
-			if writeErr != nil {
-				logger.LogWarn(c, fmt.Sprintf("write stream error: %v", writeErr))
-			}
-			return
-		}
 	}
-	if _, prepared := c.Get("event_stream_headers_set"); prepared && !c.Writer.Written() {
+	if c.Writer.Written() && (prepared || common.GetContextKeyBool(c, constant.ContextKeyUpstreamStreamError)) {
+		// HTTP status is already committed; report failure inside the SSE stream.
+		var writeErr error
+		switch format {
+		case types.RelayFormatClaude:
+			writeErr = helper.ClaudeData(c, dto.ClaudeResponse{Type: "error", Error: &claudeError})
+		case types.RelayFormatOpenAIResponses:
+			data, err := common.Marshal(gin.H{"type": "error", "code": string(apiErr.GetErrorCode()), "message": openAIError.Message, "param": openAIError.Param})
+			writeErr = err
+			if err == nil {
+				writeErr = helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: "error"}, string(data))
+			}
+		case types.RelayFormatGemini:
+			writeErr = helper.ObjectData(c, gin.H{"error": gin.H{"code": apiErr.StatusCode, "message": openAIError.Message}})
+		default:
+			writeErr = helper.ObjectData(c, gin.H{"error": openAIError})
+		}
+		if writeErr != nil {
+			logger.LogWarn(c, fmt.Sprintf("write stream error: %v", writeErr))
+		}
+		return
+	}
+	if prepared && !c.Writer.Written() {
 		// The scanner prepared headers but no stream started, including after retries.
 		c.Header("Content-Type", "application/json; charset=utf-8")
 		c.Header("Transfer-Encoding", "")

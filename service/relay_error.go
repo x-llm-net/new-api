@@ -48,7 +48,10 @@ func DecideRelayRetry(c *gin.Context, err *types.NewAPIError, retryTimes int) Po
 	if code < 100 || code > 599 {
 		return PolicyDecision{Action: "retry", Reason: "unrecognized_status", Source: "system"}
 	}
-	if operation_setting.IsAlwaysSkipRetryCode(err.GetErrorCode()) || operation_setting.IsAlwaysSkipRetryStatusCode(code) {
+	// An explicit Gemini stream error is an upstream failure, not malformed JSON.
+	// The adaptor sets SkipRetry when a model response has already started.
+	explicitStreamFailure := common.GetContextKeyBool(c, constant.ContextKeyUpstreamStreamError) && code >= 500 && code <= 503
+	if (operation_setting.IsAlwaysSkipRetryCode(err.GetErrorCode()) && !explicitStreamFailure) || operation_setting.IsAlwaysSkipRetryStatusCode(code) {
 		return PolicyDecision{Action: "stop", Reason: "system_retry_exclusion", Source: "system"}
 	}
 	if operation_setting.ShouldRetryByStatusCode(code) {

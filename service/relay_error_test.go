@@ -140,6 +140,16 @@ func TestDecideRelayRetryReasons(t *testing.T) {
 		{name: "status outside retry rules", err: upstream(http.StatusBadRequest), retries: 1, want: PolicyDecision{Action: "stop", Reason: "status_not_retryable", Source: "global"}},
 		{name: "attempt budget exhausted", err: upstream(http.StatusTooManyRequests), retries: 0, want: PolicyDecision{Action: "stop", Reason: "attempt_budget_exhausted", Source: "global"}},
 		{name: "always skipped status", err: upstream(http.StatusGatewayTimeout), retries: 1, want: PolicyDecision{Action: "stop", Reason: "system_retry_exclusion", Source: "system"}},
+		{name: "malformed response stays excluded", err: types.NewErrorWithStatusCode(errors.New("invalid JSON"), types.ErrorCodeBadResponseBody, 500), retries: 3, want: PolicyDecision{Action: "stop", Reason: "system_retry_exclusion", Source: "system"}},
+		{name: "explicit internal stream error retries", err: types.NewErrorWithStatusCode(errors.New("Internal error encountered."), types.ErrorCodeBadResponseBody, 500), retries: 3, setup: func(c *gin.Context) {
+			common.SetContextKey(c, constant.ContextKeyUpstreamStreamError, true)
+		}, want: PolicyDecision{Action: "retry", Reason: "retry_status_matched", Source: "global"}},
+		{name: "explicit stream client error stays excluded", err: types.NewErrorWithStatusCode(errors.New("invalid request"), types.ErrorCodeBadResponseBody, 400), retries: 3, setup: func(c *gin.Context) {
+			common.SetContextKey(c, constant.ContextKeyUpstreamStreamError, true)
+		}, want: PolicyDecision{Action: "stop", Reason: "system_retry_exclusion", Source: "system"}},
+		{name: "partial stream stays excluded", err: types.NewErrorWithStatusCode(errors.New("Internal error encountered."), types.ErrorCodeBadResponseBody, 500, types.ErrOptionWithSkipRetry()), retries: 3, setup: func(c *gin.Context) {
+			common.SetContextKey(c, constant.ContextKeyUpstreamStreamError, true)
+		}, want: PolicyDecision{Action: "stop", Reason: "non_retryable_error", Source: "system"}},
 		{name: "success status never retries", err: upstream(http.StatusOK), retries: 1, want: PolicyDecision{Action: "stop", Reason: "system_retry_exclusion", Source: "system"}},
 		{name: "skip retry error", err: types.NewErrorWithStatusCode(errors.New("local"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry()), retries: 1, want: PolicyDecision{Action: "stop", Reason: "non_retryable_error", Source: "system"}},
 		{name: "channel error retries without budget", err: types.NewError(errors.New("no key"), types.ErrorCodeChannelNoAvailableKey), retries: 0, want: PolicyDecision{Action: "retry", Reason: "channel_error", Source: "system"}},

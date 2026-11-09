@@ -2,10 +2,12 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -53,6 +56,9 @@ func TestGeminiStreamErrorReachesClient(t *testing.T) {
 			message string
 		}{
 			{name: "partial_then_error", prefix: partial, last: upstreamError, status: 500, message: "Internal error encountered."},
+			{name: "role_then_error", prefix: `{"candidates":[{"content":{"role":"model","parts":[]}}]}`, last: upstreamError, status: 500, message: "Internal error encountered."},
+			{name: "thinking_then_error", prefix: `{"candidates":[{"content":{"role":"model","parts":[{"thought":true,"text":"thinking"}]}}]}`, last: upstreamError, status: 500, message: "Internal error encountered."},
+			{name: "tool_then_error", prefix: `{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"lookup","args":{"id":1}}}]}}]}`, last: upstreamError, status: 500, message: "Internal error encountered."},
 			{name: "error_first", last: upstreamError, status: 500, message: "Internal error encountered."},
 			{name: "ping_then_error", last: upstreamError, ping: true, status: 500, message: "Internal error encountered."},
 			{name: "numeric_google_error", last: googleError, status: 503, message: "Service unavailable."},
@@ -104,18 +110,15 @@ func TestGeminiStreamErrorReachesClient(t *testing.T) {
 				assert.True(t, info.StreamStatus.ResponseFailed())
 				assert.Equal(t, tc.status, info.StreamStatus.OutcomeSnapshot().ErrorStatus)
 				started := tc.prefix != "" || tc.ping
-				assert.Equal(t, started, types.IsSkipRetryError(apiErr))
-				if started {
+				assert.Equal(t, tc.prefix != "", types.IsSkipRetryError(apiErr))
+				if tc.prefix != "" {
 					assert.Equal(t, "stop", service.DecideRelayRetry(ctx, apiErr, 3).Action)
 				} else {
-					assert.False(t, ctx.Writer.Written())
-					if tc.status == 503 {
-						assert.Equal(t, "retry", service.DecideRelayRetry(ctx, apiErr, 3).Action)
-					} else {
-						assert.Equal(t, "system_retry_exclusion", service.DecideRelayRetry(ctx, apiErr, 3).Reason)
-					}
+					assert.Equal(t, tc.ping, ctx.Writer.Written())
+					assert.Equal(t, "retry", service.DecideRelayRetry(ctx, apiErr, 3).Action)
+					assert.Equal(t, "attempt_budget_exhausted", service.DecideRelayRetry(ctx, apiErr, 0).Reason)
 				}
-				if tc.prefix != "" {
+				if tc.prefix == partial {
 					require.NotNil(t, usage)
 					assert.Equal(t, 13, usage.TotalTokens)
 				}
@@ -155,6 +158,124 @@ func TestGeminiStreamErrorReachesClient(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestGeminiStreamErrorUsesExistingRetryAndSettlesOnce(t *testing.T) {
+	const upstreamError = `{"error":{"message":"Internal error encountered.","type":"bad_response_body","code":"bad_response_body"}}`
+	const completed = `{"candidates":[{"content":{"role":"model","parts":[{"text":"Recovered answer."}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":3,"totalTokenCount":13}}`
+	for _, tc := range []struct {
+		name        string
+		failures    int64
+		wantCalls   int64
+		partial     bool
+		ping        bool
+		wantSuccess bool
+	}{
+		{name: "first_retry_recovers", failures: 1, wantCalls: 2, wantSuccess: true},
+		{name: "third_retry_recovers", failures: 3, wantCalls: 4, wantSuccess: true},
+		{name: "budget_exhausted", failures: 4, wantCalls: 4},
+		{name: "partial_response_is_not_retried", failures: 1, wantCalls: 1, partial: true},
+		{name: "heartbeat_then_recovery", failures: 1, wantCalls: 2, ping: true, wantSuccess: true},
+		{name: "heartbeat_then_exhaustion", failures: 4, wantCalls: 4, ping: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newResponsesWSBillingTest(t, `tier("request", fixed(0.002))`, func(*websocket.Conn, *http.Request) {})
+			previousRetries := common.RetryTimes
+			previousRanges := operation_setting.AutomaticRetryStatusCodeRanges
+			general := operation_setting.GetGeneralSetting()
+			previousPing, previousInterval := general.PingIntervalEnabled, general.PingIntervalSeconds
+			common.RetryTimes = 3
+			operation_setting.AutomaticRetryStatusCodeRanges = []operation_setting.StatusCodeRange{{Start: 500, End: 503}}
+			general.PingIntervalEnabled, general.PingIntervalSeconds = tc.ping, 1
+			t.Cleanup(func() {
+				common.RetryTimes = previousRetries
+				operation_setting.AutomaticRetryStatusCodeRanges = previousRanges
+				general.PingIntervalEnabled, general.PingIntervalSeconds = previousPing, previousInterval
+			})
+			var calls atomic.Int64
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				call := calls.Add(1)
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.(http.Flusher).Flush()
+				if tc.ping && call == 1 {
+					time.Sleep(1200 * time.Millisecond)
+				}
+				if call <= tc.failures {
+					if tc.partial {
+						_, _ = fmt.Fprint(w, "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Partial answer.\"}]}}]}\n\n")
+					}
+					_, _ = fmt.Fprintf(w, "data: %s\n\n", upstreamError)
+					return
+				}
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", completed)
+			}))
+			t.Cleanup(upstream.Close)
+			require.NoError(t, model.DB.Model(fixture.channel).Updates(map[string]any{
+				"type": constant.ChannelTypeGemini, "base_url": upstream.URL,
+				"model_mapping": `{"ws-billing":"gemini-2.5-flash"}`,
+			}).Error)
+			request, err := http.NewRequest(http.MethodPost, fixture.gatewayURL+"/v1/responses", strings.NewReader(`{"model":"ws-billing","input":"hello","stream":true}`))
+			require.NoError(t, err)
+			request.Header.Set("Authorization", "Bearer sk-"+fixture.token.Key)
+			request.Header.Set("Content-Type", "application/json")
+			client := &http.Client{Timeout: 10 * time.Second}
+			response, err := client.Do(request)
+			require.NoError(t, err)
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, err)
+			require.NoError(t, response.Body.Close())
+			select {
+			case <-fixture.httpDone:
+			case <-time.After(3 * time.Second):
+				t.Fatal("relay did not finish")
+			}
+			fixture.closeAndWait(t)
+			assert.Equal(t, tc.wantCalls, calls.Load())
+			if tc.ping {
+				assert.Contains(t, string(body), ": PING")
+			}
+			if tc.wantSuccess {
+				assert.Equal(t, http.StatusOK, response.StatusCode)
+				assert.Contains(t, string(body), "Recovered answer.")
+				assert.Equal(t, 1, strings.Count(string(body), "event: response.completed"))
+				assert.NotContains(t, string(body), "Internal error encountered.")
+				assertResponsesWSAccounting(t, fixture, []int{1000})
+			} else {
+				assert.Contains(t, string(body), "Internal error encountered.")
+				assert.NotContains(t, string(body), "response.completed")
+				assert.NotContains(t, string(body), "Recovered answer.")
+				if tc.partial || tc.ping {
+					assert.Equal(t, http.StatusOK, response.StatusCode)
+					assert.Contains(t, string(body), "event: error")
+				} else {
+					assert.Equal(t, http.StatusInternalServerError, response.StatusCode)
+				}
+				assertResponsesWSAccounting(t, fixture, nil)
+			}
+		})
+	}
+}
+
+func TestRelayFinalErrorAfterHeartbeatRetryIsSSE(t *testing.T) {
+	for _, format := range []types.RelayFormat{types.RelayFormatOpenAI, types.RelayFormatClaude, types.RelayFormatGemini, types.RelayFormatOpenAIResponses} {
+		t.Run(string(format), func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+			helper.SetEventStreamHeaders(ctx)
+			require.NoError(t, helper.PingData(ctx))
+			// The next attempt may fail before opening another upstream stream.
+			common.SetContextKey(ctx, constant.ContextKeyUpstreamStreamError, false)
+			apiErr := types.NewErrorWithStatusCode(errors.New("Service unavailable."), types.ErrorCodeBadResponseStatusCode, 503)
+			writeRelayErrorResponse(ctx, format, apiErr)
+			assert.Contains(t, recorder.Body.String(), "data: ")
+			assert.Equal(t, 1, strings.Count(recorder.Body.String(), "Service unavailable."))
+			assert.NotContains(t, recorder.Body.String(), "[DONE]")
+			for line := range strings.SplitSeq(recorder.Body.String(), "\n") {
+				assert.True(t, line == "" || strings.HasPrefix(line, ":") || strings.HasPrefix(line, "event:") || strings.HasPrefix(line, "data:"), line)
+			}
+		})
 	}
 }
 

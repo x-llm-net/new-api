@@ -170,6 +170,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	var imageCount int
 	var hasBillableUsageMetadata bool
 	var streamErr error
+	var responseStarted bool
 	var accumulatedUsageMetadata *dto.GeminiUsageMetadata
 	responseText := strings.Builder{}
 
@@ -233,6 +234,8 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			hasBillableUsageMetadata = true
 		}
 
+		// Any protocol event may start a response, even without visible text.
+		responseStarted = true
 		if !callback(data, &geminiResponse) {
 			if isGeminiDownstreamStop(c, info) {
 				sr.Stop(nil)
@@ -262,8 +265,9 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 
 	if streamErr != nil {
 		apiErr := types.NewOpenAIError(streamErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
-		// Once headers or content were sent, a retry would append another answer.
-		if c.Writer.Written() {
+		// Headers and keepalive comments alone do not commit a model response.
+		if responseStarted || isGeminiDownstreamStop(c, info) ||
+			(c.Writer.Written() && !common.GetContextKeyBool(c, constant.ContextKeyUpstreamStreamError)) {
 			types.ErrOptionWithSkipRetry()(apiErr)
 		}
 		return usage, apiErr
