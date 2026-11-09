@@ -69,6 +69,8 @@ const (
 	ContextKeyLanguage             ContextKey = "language"
 	ContextKeyIsStream             ContextKey = "is_stream"
 	ContextKeyResponseStreamStatus ContextKey = "response_stream_status"
+	// ContextKeyUpstreamStreamError marks an explicit error frame in the current relay attempt.
+	ContextKeyUpstreamStreamError ContextKey = "upstream_stream_error"
 
 	// ContextKeyAuditLogged marks that the current request has already recorded
 	// a manage/operation audit log inside the handler. When set, the admin-audit

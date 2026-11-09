@@ -22,6 +22,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -95,15 +96,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
-			case types.RelayFormatClaude:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"type":  "error",
-					"error": newAPIError.ToClaudeError(),
-				})
 			default:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"error": newAPIError.ToOpenAIError(),
-				})
+				writeRelayErrorResponse(c, relayFormat, newAPIError)
 			}
 		}
 	}()
@@ -161,6 +155,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		common.SetContextKey(c, constant.ContextKeyUpstreamStreamError, false)
 		relayInfo.StreamStatus = nil
 		relayInfo.PerformanceBusinessRejection = false
 		relayInfo.PerformanceOutputTokens = 0
@@ -224,6 +219,47 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		retryLogStr := fmt.Sprintf("重试：%s", strings.Trim(strings.Join(strings.Fields(fmt.Sprint(useChannel)), "->"), "[]"))
 		logger.LogInfo(c, retryLogStr)
 	}
+}
+
+func writeRelayErrorResponse(c *gin.Context, format types.RelayFormat, apiErr *types.NewAPIError) {
+	openAIError := apiErr.ToOpenAIError()
+	claudeError := apiErr.ToClaudeError()
+	if common.GetContextKeyBool(c, constant.ContextKeyUpstreamStreamError) {
+		openAIError.Message = apiErr.MaskSensitiveError()
+		claudeError.Message = openAIError.Message
+		if c.Writer.Written() {
+			// HTTP status is already committed; report failure inside the SSE stream.
+			var writeErr error
+			switch format {
+			case types.RelayFormatClaude:
+				writeErr = helper.ClaudeData(c, dto.ClaudeResponse{Type: "error", Error: &claudeError})
+			case types.RelayFormatOpenAIResponses:
+				data, err := common.Marshal(gin.H{"type": "error", "code": string(apiErr.GetErrorCode()), "message": openAIError.Message, "param": openAIError.Param})
+				writeErr = err
+				if err == nil {
+					writeErr = helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: "error"}, string(data))
+				}
+			case types.RelayFormatGemini:
+				writeErr = helper.ObjectData(c, gin.H{"error": gin.H{"code": apiErr.StatusCode, "message": openAIError.Message}})
+			default:
+				writeErr = helper.ObjectData(c, gin.H{"error": openAIError})
+			}
+			if writeErr != nil {
+				logger.LogWarn(c, fmt.Sprintf("write stream error: %v", writeErr))
+			}
+			return
+		}
+	}
+	if _, prepared := c.Get("event_stream_headers_set"); prepared && !c.Writer.Written() {
+		// The scanner prepared headers but no stream started, including after retries.
+		c.Header("Content-Type", "application/json; charset=utf-8")
+		c.Header("Transfer-Encoding", "")
+	}
+	if format == types.RelayFormatClaude {
+		c.JSON(apiErr.StatusCode, gin.H{"type": "error", "error": claudeError})
+		return
+	}
+	c.JSON(apiErr.StatusCode, gin.H{"error": openAIError})
 }
 
 // CountClaudeTokens implements Anthropic's token-counting utility endpoint.

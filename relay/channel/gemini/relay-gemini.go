@@ -180,6 +180,19 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			sr.Stop(streamErr)
 			return
 		}
+		if errorValue := gjson.Get(data, "error"); errorValue.Exists() && errorValue.Type != gjson.Null {
+			statusCode := http.StatusInternalServerError
+			if code := errorValue.Get("code"); code.Type == gjson.Number && code.Int() >= 400 && code.Int() <= 599 {
+				statusCode = int(code.Int())
+			}
+			streamErr = service.RelayErrorHandler(c, &http.Response{
+				StatusCode: statusCode,
+				Body:       io.NopCloser(strings.NewReader(data)),
+			}, false)
+			common.SetContextKey(c, constant.ContextKeyUpstreamStreamError, true)
+			sr.Stop(streamErr)
+			return
+		}
 
 		if len(geminiResponse.Candidates) == 0 && geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
 			info.PerformanceBusinessRejection = true
@@ -248,7 +261,12 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	}
 
 	if streamErr != nil {
-		return usage, types.NewOpenAIError(streamErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+		apiErr := types.NewOpenAIError(streamErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+		// Once headers or content were sent, a retry would append another answer.
+		if c.Writer.Written() {
+			types.ErrOptionWithSkipRetry()(apiErr)
+		}
+		return usage, apiErr
 	}
 	if info.StreamStatus != nil && !info.StreamStatus.IsNormalEnd() {
 		logger.LogWarn(c, fmt.Sprintf("Gemini stream ended unexpectedly: %s", info.StreamStatus.Summary()))
