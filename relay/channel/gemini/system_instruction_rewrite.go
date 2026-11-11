@@ -19,6 +19,14 @@ var geminiSystemInstructionRewriteRules = []systemInstructionRewriteRule{
 		from: "deep literary foundation",
 		to:   "profound literary background",
 	},
+	{
+		from: "本提示词的说明文字是中文，但你的全部输出（narrator、char、npc 的 text 正文）必须是泰语。",
+		to:   "本提示词是中文，你的全部输出（narrator、char 和 npc 的 text 正文）必须是泰语。",
+	},
+	{
+		from: "本提示词的说明文字是中文，但你的全部输出（narrator、char 和 npc 的 text 正文）必须是泰语。",
+		to:   "本提示词是中文，你的全部输出（narrator、char 和 npc 的 text 正文）必须是泰语。",
+	},
 }
 
 func rewriteGeminiSystemInstructions(c *gin.Context, request *dto.GeminiChatRequest) {
