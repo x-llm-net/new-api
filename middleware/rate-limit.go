@@ -178,6 +178,23 @@ func CriticalRateLimit() func(c *gin.Context) {
 	return defNext
 }
 
+// Login attempts must not share a budget with authenticated dashboard actions.
+func LoginRateLimit() gin.HandlerFunc {
+	if !common.CriticalRateLimitEnable {
+		return defNext
+	}
+	return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "LOGIN")
+}
+
+// Session maintenance needs a shorter window for page reloads and multiple tabs.
+// Separate refresh and logout so exhausting either cannot block the other.
+func AuthSessionRateLimit(scope string) gin.HandlerFunc {
+	if !common.CriticalRateLimitEnable {
+		return defNext
+	}
+	return rateLimitFactory(60, 60, "AUTH-SESSION:"+scope)
+}
+
 func UserCriticalRateLimit(scope string) func(c *gin.Context) {
 	if !common.CriticalRateLimitEnable {
 		return defNext
